@@ -2,6 +2,8 @@
 
 Hyper-minimal single binary gzipping webserver for serving static content based on labstack echo-server. Based on alpine.
 
+Has SPA mode which includes runtime templating of vite environment variables.
+
 Serves from `/public`
 
 # Config as ENV
