@@ -9,7 +9,13 @@ import (
 
 func main() {
 	e := echo.New()
-	addr := ":" + os.Getenv("PORT")
+	port, exists := os.LookupEnv("PORT")
+
+	if !exists {
+		port = "80"
+	}
+
+	addr := ":" + port
 
 	// TODO: This should serve all files not just /assets
 	if os.Getenv("SPA_MODE") == "1" {
