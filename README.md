@@ -16,11 +16,8 @@ Serves from `/public`
 ```Dockerfile
 
 FROM ghcr.io/compliance-framework/nano-web:latest
-WORKDIR /
 COPY ./dist /public/
 ENV PORT=8081
 ENV SPA_MODE=1
-EXPOSE $PORT
-CMD ["/serve"]
 
 ```
