@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,7 +18,8 @@ type Template struct {
 }
 
 type TemplateData struct {
-	Env map[string]string `json:"env"`
+	Env  map[string]string `json:"env"`
+	Json string            `json:"json"`
 }
 
 func (t *Template) Render(w io.Writer, name string, data any, c echo.Context) error {
@@ -42,8 +44,13 @@ func getAppEnv() map[string]string {
 var appEnv = getAppEnv()
 
 func Index(c echo.Context) error {
+	jsonString, err := json.Marshal(appEnv)
+	if err != nil {
+		return err
+	}
 	return c.Render(http.StatusOK, "index.html", &TemplateData{
-		Env: appEnv,
+		Env:  appEnv,
+		Json: string(jsonString),
 	})
 }
 
