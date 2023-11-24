@@ -58,11 +58,9 @@ func Index(c echo.Context) error {
 
 func getEnv(name string, fallback string) string {
 	value, exists := os.LookupEnv(name)
-
 	if !exists {
 		value = fallback
 	}
-
 	return value
 }
 
@@ -72,12 +70,10 @@ func main() {
 
 	if os.Getenv("SPA_MODE") == "1" {
 		e.Static("/assets", "public/assets")
-
 		t := &Template{
 			templates: template.Must(template.ParseFiles("public/index.html")),
 		}
 		e.Renderer = t
-
 		e.GET("/*", Index)
 	} else {
 		e.Static("/", "public")
