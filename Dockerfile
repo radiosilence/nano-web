@@ -8,4 +8,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /serve
 FROM alpine:latest
 WORKDIR /
 COPY --from=builder /serve .
+ENV PORT=80
+EXPOSE $PORT
 CMD ["/serve"]
