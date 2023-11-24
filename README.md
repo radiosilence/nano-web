@@ -13,7 +13,7 @@ Serves from `/public`
 
 ```Dockerfile
 
-FROM antihero/nano-web:latest
+FROM ghcr.io/compliance-framework/nano-web:latest
 WORKDIR /
 COPY ./dist /public/
 ENV PORT=8081
