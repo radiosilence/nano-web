@@ -1,12 +1,26 @@
 package main
 
 import (
+	"io"
+	"net/http"
 	"os"
+	"text/template"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
 
+type Template struct {
+	templates *template.Template
+}
+
+func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
+	return t.templates.ExecuteTemplate(w, name, data)
+}
+
+func Hello(c echo.Context) error {
+	return c.Render(http.StatusOK, "hello", "World")
+}
 func main() {
 	e := echo.New()
 	port, exists := os.LookupEnv("PORT")
@@ -17,10 +31,15 @@ func main() {
 
 	addr := ":" + port
 
-	// TODO: This should serve all files not just /assets
 	if os.Getenv("SPA_MODE") == "1" {
 		e.Static("/assets", "public/assets")
-		e.File("/*", "public/index.html")
+
+		t := &Template{
+			templates: template.Must(template.ParseGlob("public/*.html")),
+		}
+		e.Renderer = t
+
+		e.GET("/*", Hello)
 	} else {
 		e.Static("/", "public")
 	}
