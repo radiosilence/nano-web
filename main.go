@@ -18,8 +18,9 @@ type Template struct {
 }
 
 type TemplateData struct {
-	Env  map[string]string `json:"env"`
-	Json string            `json:"json"`
+	Env         map[string]string `json:"env"`
+	Json        string            `json:"json"`
+	EscapedJson string            `json:"escapedJson"`
 }
 
 func (t *Template) Render(w io.Writer, name string, data any, c echo.Context) error {
@@ -49,8 +50,9 @@ func Index(c echo.Context) error {
 		return err
 	}
 	return c.Render(http.StatusOK, "index.html", &TemplateData{
-		Env:  appEnv,
-		Json: string(jsonString),
+		Env:         appEnv,
+		Json:        string(jsonString),
+		EscapedJson: strings.Replace(string(jsonString), "\"", "\\\"", -1),
 	})
 }
 
