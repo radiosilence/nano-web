@@ -5,7 +5,13 @@ permissions:
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+      - seed
+    tags:
+      - v*
+  pull_request:
+
 env:
   IMAGE_NAME: nano-web
 
