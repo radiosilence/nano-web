@@ -9,5 +9,6 @@ FROM alpine:latest
 WORKDIR /
 COPY --from=builder /serve .
 ENV PORT=80
+ENV SPA_MODE=0
 EXPOSE $PORT
 CMD ["/serve"]
