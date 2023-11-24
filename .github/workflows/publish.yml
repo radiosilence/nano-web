@@ -34,6 +34,7 @@ jobs:
           flavor: |
             latest=auto
           tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
             type=schedule
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
