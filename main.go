@@ -69,15 +69,14 @@ func main() {
 	addr := ":" + getEnv("PORT", "80")
 
 	if os.Getenv("SPA_MODE") == "1" {
-		e.Static("/assets", "public/assets")
 		t := &Template{
 			templates: template.Must(template.ParseFiles("public/index.html")),
 		}
 		e.Renderer = t
 		e.GET("/*", Index)
-	} else {
-		e.Static("/", "public")
 	}
+
+	e.Static("/", "public")
 
 	e.Use(middleware.Gzip())
 	e.Use(middleware.Logger())
