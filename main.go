@@ -69,14 +69,6 @@ func main() {
 	e := echo.New()
 	addr := ":" + getEnv("PORT", "80")
 
-	if os.Getenv("SPA_MODE") == "1" {
-		t := &Template{
-			templates: template.Must(template.ParseFiles("public/index.html")),
-		}
-		e.Renderer = t
-		e.GET("/*", Index)
-	}
-
 	filepath.Walk("public", func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
@@ -91,6 +83,15 @@ func main() {
 		e.File(urlPath, path)
 		return nil
 	})
+
+	if os.Getenv("SPA_MODE") == "1" {
+		t := &Template{
+			templates: template.Must(template.ParseFiles("public/index.html")),
+		}
+		e.Renderer = t
+		e.GET("/*", Index)
+		e.GET("/", Index)
+	}
 
 	e.Use(middleware.Gzip())
 	e.Use(middleware.Logger())
