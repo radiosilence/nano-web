@@ -75,11 +75,14 @@ func main() {
 		}
 		urlPath := strings.Replace(path, "public", "", 1)
 		if info.Name() == "index.html" {
-			indexUrlPath := strings.Replace(urlPath, "/index.html", "/", 1)
+			indexUrlPath := strings.Replace(urlPath, "/index.html", "", 1)
+			if indexUrlPath == "" {
+				indexUrlPath = "/"
+			}
+			fmt.Println("⇨ adding index", indexUrlPath, "→", path)
 			e.File(indexUrlPath, path)
 		}
-		e.Logger.Info("added route for file", urlPath, path)
-		fmt.Println("adding route", urlPath, path)
+		fmt.Println("⇨ adding route", urlPath, "→", path)
 		e.File(urlPath, path)
 		return nil
 	})
