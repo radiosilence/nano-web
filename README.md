@@ -1,6 +1,8 @@
 # nano-web
 
-Hyper-minimal single binary gzipping webserver for serving static content based on labstack echo-server. Based on alpine.
+Hyper-minimal single binary gzipping webserver for serving static content based on labstack echo-server. Container based on alpine.
+
+Image base size of `~19MB` for speedy pulls.
 
 Has SPA mode which includes runtime templating of vite environment variables.
 
@@ -16,7 +18,7 @@ Serves from `/public`
 
 ```Dockerfile
 
-FROM ghcr.io/compliance-framework/nano-web:latest
+FROM ghcr.io/radiosilence/nano-web:latest
 COPY ./dist /public/
 ENV PORT=8081
 ENV SPA_MODE=1
