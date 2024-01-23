@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -76,7 +77,15 @@ func main() {
 		e.GET("/*", Index)
 	}
 
-	e.Static("/", "public")
+	filepath.Walk("public", func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			return nil
+		}
+		e.GET(strings.Replace(path, "public", "", 1), func(c echo.Context) error {
+			return c.File(path)
+		})
+		return nil
+	})
 
 	e.Use(middleware.Gzip())
 	e.Use(middleware.Logger())
