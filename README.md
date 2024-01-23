@@ -9,7 +9,7 @@ Serves from `/public`
 # Config as ENV
 
 - `PORT` The port to listen on. Defaults to `80`
-- `SPA_MODE` when set to `1` it only serves up ` /public/assets` and all other requests go to `/public/index.html`
+- `SPA_MODE` when set to `1` 404 request will return `/public/index.html` as a `200`.
 
 # Example Dockerfile
 
