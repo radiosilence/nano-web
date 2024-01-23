@@ -81,9 +81,14 @@ func main() {
 		if info.IsDir() {
 			return nil
 		}
-		e.GET(strings.Replace(path, "public", "", 1), func(c echo.Context) error {
-			return c.File(path)
-		})
+		urlPath := strings.Replace(path, "public", "", 1)
+		if info.Name() == "index.html" {
+			indexUrlPath := strings.Replace(urlPath, "/index.html", "/", 1)
+			e.File(indexUrlPath, path)
+		}
+		e.Logger.Info("added route for file", urlPath, path)
+		fmt.Println("adding route", urlPath, path)
+		e.File(urlPath, path)
 		return nil
 	})
 
