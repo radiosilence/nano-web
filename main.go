@@ -68,7 +68,17 @@ func getEnv(name string, fallback string) string {
 func main() {
 	e := echo.New()
 	addr := ":" + getEnv("PORT", "80")
+	_, err := os.Stat("public")
 
+	if err != nil {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Println("⇨ error getting current working directory", err)
+			os.Exit(-1)
+		}
+		fmt.Println("⇨ public directory not found in: " + cwd)
+		os.Exit(-1)
+	}
 	filepath.Walk("public", func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
