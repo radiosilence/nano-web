@@ -12,18 +12,20 @@ nano-build:
 nano-tar:
 	tar czf $(PKGDIR).tar.gz $(PKGDIR)
 
-nano-create:
+nano-create: nano-clean
 	mkdir -p $(PKGDIR)/sysroot
+	mkdir -p $(PKGDIR)/sysroot/public
+	./scripts/make-manifest.sh > $(PKGDIR)/package.manifest
 	cp README.md $(PKGDIR)
 
-nano-manifest:
-	./scripts/make-manifest.sh > $(PKGDIR)/package.manifest
-
-nano-add-package:
+nano-add-package: nano-create nano-build
 	ops pkg add $(PKGDIR) --name $(PKGRELEASE)
 
-nano-push: nano-clean nano-create nano-manifest nano-build nano-add-package
+nano-push: nano-add-package
 	ops pkg push $(PKGRELEASE)
 
-nano-bundle: nano-clean nano-create nano-manifest nano-build nano-tar 
+nano-bundle: nano-create nano-build nano-tar 
 	@echo "Release created: $(PKGDIR).tar.gz"
+
+nano-load: nano-add-package
+	ops pkg load -l $(PKGRELEASE) -p 80
