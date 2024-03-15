@@ -1,11 +1,11 @@
 # nano-web
 
-Hyper-minimal single binary compressing webserver for serving static content based on fasthttp.
+Hyper-minimal low-latency webserver for serving SPAs and static content based on fasthttp.
 
-- Precaches, templates, compresses all resources into memory at startup for extreme low-latency.
-- Designed to work as a docker base image or as a nanovm unikernel.
-- Includes runtime templating of environment variables (configurable prefix).
-- Serves from `/public`
+- Precaches, templates, compresses all resources into memory at startup for extreme low-latency
+- Brotli and gzip compression
+- Designed to work as a docker base image or as a nanovm unikernel
+- Includes runtime templating of environment variables (configurable prefix)
 
 # Config as ENV
 
