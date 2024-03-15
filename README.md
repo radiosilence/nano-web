@@ -6,6 +6,8 @@ Hyper-minimal low-latency webserver for serving SPAs and static content based on
 - Brotli and gzip compression
 - Designed to work as a docker base image or as a nanovm unikernel
 - Includes runtime templating of environment variables (configurable prefix)
+- Index pages so works nicely with things like Astro from the get-go.
+- SPA mode to service 404s as index (200) to support client side routing.
 
 # Config as ENV
 
