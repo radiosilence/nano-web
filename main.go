@@ -252,6 +252,7 @@ func populateRoutes(routes Routes) {
 			}
 			fmt.Println("⇨ adding index", indexUrlPath, "→", path)
 			routes[indexUrlPath] = route
+			routes[indexUrlPath+"/"] = route
 		}
 		fmt.Println("⇨ adding route", urlPath, "→", path)
 
