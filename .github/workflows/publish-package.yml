@@ -28,7 +28,11 @@ jobs:
           curl https://ops.city/get.sh -sSfL | sh
       - name: Login
         run: |
+          export OPS_DIR="$HOME/.ops"
+          export PATH="$HOME/.ops/bin:$PATH"
           ops pkg login ${{ secrets.OPS_KEY }}
       - name: Push
         run: |
+          export OPS_DIR="$HOME/.ops"
+          export PATH="$HOME/.ops/bin:$PATH"
           make pkg-push
