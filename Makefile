@@ -15,15 +15,15 @@ pkg-create: pkg-clean
 	./scripts/make-manifest.sh > $(PKGDIR)/package.manifest
 	cp README.md $(PKGDIR)
 
-pkg-add-package: pkg-create pkg-build
+pkg-add: pkg-create pkg-build
 	ops pkg add $(PKGDIR) --name $(PKGRELEASE)
 
 pkg-bundle: pkg-create pkg-build
 	tar czf $(PKGDIR).tar.gz $(PKGDIR)
 	@echo "Release created: $(PKGDIR).tar.gz"
 
-pkg-push: pkg-add-package
+pkg-push: pkg-add
 	ops pkg push $(PKGRELEASE)
 
-pkg-load: pkg-add-package
+pkg-load: pkg-add
 	ops pkg load -l $(PKGRELEASE) -p 80
