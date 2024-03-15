@@ -15,9 +15,10 @@ import (
 )
 
 type Route struct {
-	Content      []byte
-	ContentType  string
-	LastModified string
+	Content         []byte
+	ContentType     string
+	ContentEncoding string
+	LastModified    string
 }
 
 type Routes map[string]Route
@@ -143,6 +144,7 @@ func makeRoute(path string) (Route, error) {
 	ext := strings.ToLower(path[strings.LastIndex(path, "."):])
 	mimetype := getMimetype(ext)
 	dat, err := os.ReadFile(path)
+	contentEncoding := ""
 
 	if err != nil {
 		return Route{}, err
@@ -165,12 +167,14 @@ func makeRoute(path string) (Route, error) {
 
 	if gzipType(mimetype) {
 		dat = gzipData(dat)
+		contentEncoding = "gzip"
 	}
 
 	return Route{
-		Content:      dat,
-		ContentType:  mimetype,
-		LastModified: info.ModTime().Format(http.TimeFormat),
+		Content:         dat,
+		ContentType:     mimetype,
+		ContentEncoding: contentEncoding,
+		LastModified:    info.ModTime().Format(http.TimeFormat),
 	}, nil
 }
 
@@ -225,6 +229,24 @@ func populateRoutes(routes Routes) {
 }
 
 func handler(ctx *fasthttp.RequestCtx) {
+	fmt.Println("⇨ request", string(ctx.Path()))
+	route, exists := routes[string(ctx.Path())]
+	pp.Print(route)
+	pp.Print(exists)
+	if !exists {
+		if os.Getenv("SPA_MODE") == "1" {
+			route, exists = routes["/"]
+			if !exists {
+				ctx.Error("Not Found", fasthttp.StatusNotFound)
+				return
+			}
+		} else {
+			ctx.Error("Not Found", fasthttp.StatusNotFound)
+			return
+		}
+	}
+
+	pp.Print(route)
 	fmt.Fprintf(ctx, "Hi there! RequestURI is %q", ctx.RequestURI())
 }
 
