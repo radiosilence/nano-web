@@ -1,61 +1,26 @@
 package main
 
 import (
-	"encoding/json"
+	"bytes"
+	"compress/gzip"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/k0kubun/pp"
+	"github.com/valyala/fasthttp"
 )
 
-type Template struct {
-	templates *template.Template
+type Route struct {
+	Content      []byte
+	ContentType  string
+	LastModified string
 }
 
-type TemplateData struct {
-	Env         map[string]string `json:"env"`
-	Json        string            `json:"json"`
-	EscapedJson string            `json:"escapedJson"`
-}
-
-func (t *Template) Render(w io.Writer, name string, data any, c echo.Context) error {
-	fmt.Printf("%+v\n", data)
-	return t.templates.ExecuteTemplate(w, name, data)
-}
-
-func getAppEnv() map[string]string {
-	prefix := getEnv("CONFIG_PREFIX", "VITE_")
-	data := make(map[string]string)
-	for _, env := range os.Environ() {
-		parts := strings.Split(env, "=")
-		key := parts[0]
-		value := strings.Join(parts[1:], "=")
-		if strings.HasPrefix(key, prefix) {
-			data[strings.Replace(key, prefix, "", 1)] = value
-		}
-	}
-	return data
-}
-
-var appEnv = getAppEnv()
-
-func Index(c echo.Context) error {
-	jsonString, err := json.Marshal(appEnv)
-	if err != nil {
-		return err
-	}
-	return c.Render(http.StatusOK, "index.html", &TemplateData{
-		Env:         appEnv,
-		Json:        string(jsonString),
-		EscapedJson: strings.Replace(string(jsonString), "\"", "\\\"", -1),
-	})
-}
+type Routes map[string]Route
 
 func getEnv(name string, fallback string) string {
 	value, exists := os.LookupEnv(name)
@@ -65,11 +30,162 @@ func getEnv(name string, fallback string) string {
 	return value
 }
 
-func main() {
-	e := echo.New()
-	addr := ":" + getEnv("PORT", "80")
-	_, err := os.Stat("public")
+func getAppEnv() map[string]string {
+	prefix := getEnv("CONFIG_PREFIX", "VITE_")
+	appEnv := make(map[string]string)
+	for _, env := range os.Environ() {
+		parts := strings.Split(env, "=")
+		key := parts[0]
+		value := strings.Join(parts[1:], "=")
+		if strings.HasPrefix(key, prefix) {
+			appEnv[strings.Replace(key, prefix, "", 1)] = value
+		}
+	}
+	return appEnv
+}
 
+var appEnv = getAppEnv()
+var publicDir = getEnv("PUBLIC_DIR", "public")
+var routes Routes = make(map[string]Route)
+
+func getMimetype(ext string) string {
+	switch ext {
+	case ".html":
+		return "text/html"
+	case ".css":
+		return "text/css"
+	case ".js":
+		return "text/javascript"
+	case ".json":
+		return "application/json"
+	case ".xml":
+		return "application/xml"
+	case ".pdf":
+		return "application/pdf"
+	case ".zip":
+		return "application/zip"
+	case ".doc":
+		return "application/msword"
+	case ".eot":
+		return "application/vnd.ms-fontobject"
+	case ".otf":
+		return "font/otf"
+	case ".ttf":
+		return "font/ttf"
+	case ".woff":
+		return "font/woff"
+	case ".woff2":
+		return "font/woff2"
+	case ".gif":
+		return "image/gif"
+	case ".jpeg":
+		return "image/jpeg"
+	case ".jpg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".svg":
+		return "image/svg+xml"
+	case ".ico":
+		return "image/x-icon"
+	case ".webp":
+		return "image/webp"
+	case ".mp4":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	case ".wav":
+		return "audio/wav"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".ogg":
+		return "audio/ogg"
+	case ".csv":
+		return "text/csv"
+	case ".txt":
+		return "text/plain"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func templateRoute(name string, content string) (string, error) {
+	writer := bytes.NewBufferString("")
+	tmpl, err := template.New(name).Parse(content)
+	if err != nil {
+		return "", err
+	}
+	err = tmpl.Execute(writer, appEnv)
+	if err != nil {
+		return "", err
+	}
+	return writer.String(), nil
+}
+
+func gzipType(mimetype string) bool {
+	switch mimetype {
+	case "text/html", "text/css", "text/javascript", "application/json":
+		return true
+	default:
+		return false
+	}
+}
+
+func gzipData(dat []byte) []byte {
+	var b bytes.Buffer
+	w := gzip.NewWriter(&b)
+	w.Write(dat)
+	w.Close()
+	return b.Bytes()
+}
+
+func makeRoute(path string) (Route, error) {
+	ext := strings.ToLower(path[strings.LastIndex(path, "."):])
+	mimetype := getMimetype(ext)
+	dat, err := os.ReadFile(path)
+
+	if err != nil {
+		return Route{}, err
+	}
+
+	info, err := os.Stat(path)
+
+	if err != nil {
+		return Route{}, err
+	}
+
+	if isTemplateableType(mimetype) {
+		content, err := templateRoute(path, string(dat))
+		if err != nil {
+			return Route{}, err
+		}
+		dat = []byte(content)
+
+	}
+
+	if gzipType(mimetype) {
+		dat = gzipData(dat)
+	}
+
+	return Route{
+		Content:      dat,
+		ContentType:  mimetype,
+		LastModified: info.ModTime().Format(http.TimeFormat),
+	}, nil
+}
+
+func isTemplateableType(mimetype string) bool {
+	switch mimetype {
+	case "text/html", "text/css", "text/javascript", "application/json":
+		return true
+	default:
+		return false
+	}
+}
+
+// Walk the public dir and create routes for each file
+func populateRoutes(routes Routes) {
+	_, err := os.Stat(publicDir)
 	if err != nil {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -84,30 +200,38 @@ func main() {
 			return nil
 		}
 		urlPath := strings.Replace(path, "public", "", 1)
+
+		route, err := makeRoute(path)
+
+		if err != nil {
+			fmt.Errorf("⇨ error making route for %s: %s", urlPath, err)
+			return nil
+		}
+
+		routes[urlPath] = route
+
 		if info.Name() == "index.html" {
 			indexUrlPath := strings.Replace(urlPath, "/index.html", "", 1)
 			if indexUrlPath == "" {
 				indexUrlPath = "/"
 			}
 			fmt.Println("⇨ adding index", indexUrlPath, "→", path)
-			e.File(indexUrlPath, path)
+			routes[indexUrlPath] = route
 		}
 		fmt.Println("⇨ adding route", urlPath, "→", path)
-		e.File(urlPath, path)
+
 		return nil
 	})
+}
 
-	if os.Getenv("SPA_MODE") == "1" {
-		t := &Template{
-			templates: template.Must(template.ParseFiles("public/index.html")),
-		}
-		e.Renderer = t
-		e.GET("/*", Index)
-		e.GET("/", Index)
-	}
+func handler(ctx *fasthttp.RequestCtx) {
+	fmt.Fprintf(ctx, "Hi there! RequestURI is %q", ctx.RequestURI())
+}
 
-	e.Use(middleware.Gzip())
-	e.Use(middleware.Logger())
-
-	e.Logger.Fatal(e.Start(addr))
+func main() {
+	addr := ":" + getEnv("PORT", "80")
+	populateRoutes(routes)
+	fmt.Printf("⇨ routes:\n")
+	pp.Print(routes)
+	fasthttp.ListenAndServe(addr, handler)
 }
