@@ -26,7 +26,7 @@ ENV SPA_MODE=1
 
 ```
 
-# NanoVM/OPS Quick Start
+# Nanos/OPS Quick Start
 
 You'll want a `config.json` for your project that looks something like this:
 
