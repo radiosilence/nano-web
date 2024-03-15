@@ -35,4 +35,5 @@ jobs:
         run: |
           export OPS_DIR="$HOME/.ops"
           export PATH="$HOME/.ops/bin:$PATH"
+          echo "Version: $(./scripts/get-version.sh)"
           make pkg-push
