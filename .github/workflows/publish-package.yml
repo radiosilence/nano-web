@@ -1,0 +1,29 @@
+name: Publish Package
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - seed
+    tags:
+      - v*
+  pull_request:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up OPS
+        run: |
+          curl https://ops.city/get.sh -sSfL | sh
+      - name: Push
+        run: |
+          make pkg-push

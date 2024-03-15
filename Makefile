@@ -1,5 +1,5 @@
 PKGNAME=nano-web
-PKGVERSION=0.1.1
+PKGVERSION:=$(shell ./scripts/get-version.sh)
 PKGRELEASE=$(PKGNAME)_$(PKGVERSION)
 RELEASEDIR=./release
 PKGDIR=$(RELEASEDIR)/$(PKGRELEASE)
