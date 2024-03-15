@@ -21,9 +21,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
       - name: Set up OPS
         run: |
-          curl https://ops.city/get.sh -sSfL | sh
+          curl https://ops.city/get.sh -sSfL | sudo sh
+      - name: Login
+        run: |
+          ops pkg login ${{ secrets.OPS_KEY }}
       - name: Push
         run: |
           make pkg-push
