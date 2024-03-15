@@ -1,6 +1,6 @@
 # nano-web
 
-Hyper-minimal low-latency (<5ms) webserver for serving SPAs and static content based on fasthttp.
+Hyper-minimal low-latency (roughly <5ms) webserver for serving SPAs and static content based on fasthttp.
 
 - Precaches, templates, compresses all resources into memory at startup for extreme low-latency.
 - Brotli and gzip compression.
