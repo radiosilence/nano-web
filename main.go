@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,15 +11,14 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/k0kubun/pp"
+	"github.com/andybalholm/brotli"
 	"github.com/valyala/fasthttp"
 )
 
 type Route struct {
-	Content         []byte
-	ContentType     string
-	ContentEncoding string
-	LastModified    string
+	Content      Content
+	ContentType  string
+	LastModified string
 }
 
 type Routes map[string]Route
@@ -110,20 +110,49 @@ func getMimetype(ext string) string {
 	}
 }
 
+type TemplateData struct {
+	Env         map[string]string `json:"env"`
+	Json        string            `json:"json"`
+	EscapedJson string            `json:"escapedJson"`
+}
+
+type Content struct {
+	Plain  []byte
+	Gzip   []byte
+	Brotli []byte
+}
+
 func templateRoute(name string, content string) (string, error) {
 	writer := bytes.NewBufferString("")
 	tmpl, err := template.New(name).Parse(content)
 	if err != nil {
 		return "", err
 	}
-	err = tmpl.Execute(writer, appEnv)
+	jsonString, err := json.Marshal(appEnv)
+	if err != nil {
+		return "", err
+	}
+	err = tmpl.Execute(writer, &TemplateData{
+		Env:         appEnv,
+		Json:        string(jsonString),
+		EscapedJson: strings.Replace(string(jsonString), "\"", "\\\"", -1),
+	})
 	if err != nil {
 		return "", err
 	}
 	return writer.String(), nil
 }
 
-func gzipType(mimetype string) bool {
+func templateType(mimetype string) bool {
+	switch mimetype {
+	case "text/html", "text/css", "text/javascript", "application/json":
+		return true
+	default:
+		return false
+	}
+}
+
+func compressedType(mimetype string) bool {
 	switch mimetype {
 	case "text/html", "text/css", "text/javascript", "application/json":
 		return true
@@ -140,11 +169,19 @@ func gzipData(dat []byte) []byte {
 	return b.Bytes()
 }
 
+func brotliData(dat []byte) []byte {
+	var b bytes.Buffer
+	w := brotli.NewWriter(&b)
+	w.Write(dat)
+	w.Close()
+	return b.Bytes()
+
+}
+
 func makeRoute(path string) (Route, error) {
 	ext := strings.ToLower(path[strings.LastIndex(path, "."):])
 	mimetype := getMimetype(ext)
 	dat, err := os.ReadFile(path)
-	contentEncoding := ""
 
 	if err != nil {
 		return Route{}, err
@@ -156,7 +193,7 @@ func makeRoute(path string) (Route, error) {
 		return Route{}, err
 	}
 
-	if isTemplateableType(mimetype) {
+	if templateType(mimetype) {
 		content, err := templateRoute(path, string(dat))
 		if err != nil {
 			return Route{}, err
@@ -165,26 +202,20 @@ func makeRoute(path string) (Route, error) {
 
 	}
 
-	if gzipType(mimetype) {
-		dat = gzipData(dat)
-		contentEncoding = "gzip"
+	content := Content{
+		Plain: dat,
+	}
+
+	if compressedType(mimetype) {
+		content.Gzip = gzipData(dat)
+		content.Brotli = brotliData(dat)
 	}
 
 	return Route{
-		Content:         dat,
-		ContentType:     mimetype,
-		ContentEncoding: contentEncoding,
-		LastModified:    info.ModTime().Format(http.TimeFormat),
+		Content:      content,
+		ContentType:  mimetype,
+		LastModified: info.ModTime().Format(http.TimeFormat),
 	}, nil
-}
-
-func isTemplateableType(mimetype string) bool {
-	switch mimetype {
-	case "text/html", "text/css", "text/javascript", "application/json":
-		return true
-	default:
-		return false
-	}
 }
 
 // Walk the public dir and create routes for each file
@@ -228,11 +259,39 @@ func populateRoutes(routes Routes) {
 	})
 }
 
+func getAcceptedEncoding(ctx *fasthttp.RequestCtx) string {
+	acceptEncoding := string(ctx.Request.Header.Peek("Accept-Encoding"))
+	if strings.Contains(acceptEncoding, "br") {
+		return "br"
+	}
+	if strings.Contains(acceptEncoding, "gzip") {
+		return "gzip"
+	}
+	return ""
+}
+
+func getEncodedContent(acceptedEncoding string, content Content) (string, []byte) {
+	switch acceptedEncoding {
+	case "br":
+		if content.Brotli != nil {
+			return "br", content.Brotli
+		} else {
+			return "", content.Plain
+		}
+	case "gzip":
+		if content.Gzip != nil {
+			return "gzip", content.Gzip
+		} else {
+			return "", content.Plain
+		}
+	default:
+		return "", content.Plain
+	}
+}
+
 func handler(ctx *fasthttp.RequestCtx) {
 	fmt.Println("⇨ request", string(ctx.Path()))
 	route, exists := routes[string(ctx.Path())]
-	pp.Print(route)
-	pp.Print(exists)
 	if !exists {
 		if os.Getenv("SPA_MODE") == "1" {
 			route, exists = routes["/"]
@@ -246,14 +305,21 @@ func handler(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	pp.Print(route)
-	fmt.Fprintf(ctx, "Hi there! RequestURI is %q", ctx.RequestURI())
+	ctx.Response.Header.Set("Content-Type", route.ContentType)
+	ctx.Response.Header.Set("Server", "nano-web")
+	ctx.Response.Header.Set("Last-Modified", route.LastModified)
+	acceptedEncoding := getAcceptedEncoding(ctx)
+	encoding, content := getEncodedContent(acceptedEncoding, route.Content)
+	if encoding != "" {
+		ctx.Response.Header.Set("Content-Encoding", encoding)
+	}
+	fmt.Fprintf(ctx, "%s", content)
 }
 
 func main() {
 	addr := ":" + getEnv("PORT", "80")
 	populateRoutes(routes)
-	fmt.Printf("⇨ routes:\n")
-	pp.Print(routes)
+	// fmt.Printf("⇨ routes:\n")
+	// pp.Print(routes)
 	fasthttp.ListenAndServe(addr, handler)
 }
