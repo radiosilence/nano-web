@@ -51,6 +51,12 @@ Then you can run this command to build your image:
 ops image create -c config.json --package radiosilence/nano-web:latest -i my-website
 ```
 
+Then run locally to test:
+
+```
+ops instance create my-website -c ./config.json
+```
+
 # Runtime config for SPAs
 
 **THIS IS NOT INTENDED FOR STORING SECRETS, ALL VARIABLES WILL BE PUBLIC TO CLIENT**
