@@ -26,6 +26,27 @@ ENV SPA_MODE=1
 
 ```
 
+# NanoVM/OPS Quick Start
+
+You'll want a `config.json` for your project that looks something like this:
+
+```json
+{
+  "Dirs": ["public"],
+  "Env": {
+    "SPA_MODE": "1"
+  }
+}
+```
+
+Make sure your public files are in a `./public` directory relative to CWD.
+
+Then you can run this command to build your image:
+
+```
+ops image create -c config.json --package radiosilence/nano-web:latest -i my-website
+```
+
 # Runtime config for SPAs
 
 **THIS IS NOT INTENDED FOR STORING SECRETS, ALL VARIABLES WILL BE PUBLIC TO CLIENT**
@@ -59,24 +80,3 @@ try {
 ```
 
 In this way, you can reference these variables that can be set when the container is spun-up.
-
-# NanoVM/OPS Quick Start
-
-You'll want a `config.json` for your project that looks something like this:
-
-```json
-{
-  "Dirs": ["public"],
-  "Env": {
-    "SPA_MODE": "1"
-  }
-}
-```
-
-Make sure your public files are in a `./public` directory relative to CWD.
-
-Then you can run this command to build your image:
-
-```
-ops image create -c config.json --package radiosilence/nano-web:latest -i my-website
-```
