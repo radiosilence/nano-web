@@ -25,7 +25,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
       - name: Set up OPS
         run: |
-          curl https://ops.city/get.sh -sSfL | sudo sh
+          curl https://ops.city/get.sh -sSfL | sh
       - name: Login
         run: |
           ops pkg login ${{ secrets.OPS_KEY }}
