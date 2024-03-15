@@ -1,10 +1,11 @@
 PKGNAME=nano-web
 PKGVERSION=0.0.1
 PKGRELEASE=$(PKGNAME)_$(PKGVERSION)
-PKGDIR=release/$(PKGRELEASE)
+RELEASEDIR=./release
+PKGDIR=$(RELEASEDIR)/$(PKGRELEASE)
 
 pkg-clean:
-	rm -rf $(PKGDIR)
+	rm -rf $(RELEASEDIR)
 
 pkg-build:
 	 GOOS=linux go build -o $(PKGDIR)/$(PKGNAME) main.go
