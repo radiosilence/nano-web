@@ -1,12 +1,10 @@
 # nano-web
 
-Hyper-minimal single binary gzipping webserver for serving static content based on labstack echo-server. Container based on alpine.
+Hyper-minimal single binary compressing webserver for serving static content based on fasthttp.
 
-Image base size of `~19MB` for speedy pulls.
-
-Has SPA mode which includes runtime templating of vite environment variables.
-
-Serves from `/public`
+- Designed to work as a docker base image or as a nanovm unikernel.
+- Includes runtime templating of environment variables (configurable prefix).
+- Serves from `/public`
 
 # Config as ENV
 
