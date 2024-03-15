@@ -3,27 +3,27 @@ PKGVERSION=0.0.1
 PKGRELEASE=$(PKGNAME)_$(PKGVERSION)
 PKGDIR=release/$(PKGRELEASE)
 
-clean:
+pkg-clean:
 	rm -rf $(PKGDIR)
 
-build:
+pkg-build:
 	 GOOS=linux go build -o $(PKGDIR)/$(PKGNAME) main.go
 
-create: clean
+pkg-create: pkg-clean
 	mkdir -p $(PKGDIR)/sysroot
 	mkdir -p $(PKGDIR)/sysroot/public
 	./scripts/make-manifest.sh > $(PKGDIR)/package.manifest
 	cp README.md $(PKGDIR)
 
-add-package: create build
+pkg-add-package: pkg-create pkg-build
 	ops pkg add $(PKGDIR) --name $(PKGRELEASE)
 
-bundle: create build
+pkg-bundle: pkg-create pkg-build
 	tar czf $(PKGDIR).tar.gz $(PKGDIR)
 	@echo "Release created: $(PKGDIR).tar.gz"
 
-push: add-package
+pkg-push: pkg-add-package
 	ops pkg push $(PKGRELEASE)
 
-load: add-package
+pkg-load: pkg-add-package
 	ops pkg load -l $(PKGRELEASE) -p 80
