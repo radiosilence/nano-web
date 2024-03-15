@@ -2,7 +2,7 @@
 
 Hyper-minimal low-latency (roughly <5ms) webserver for serving SPAs and static content based on fasthttp.
 
-- Precaches, templates, compresses all resources into memory at startup for extreme low-latency.
+- Precaches, templates, compresses all resources into memory at startup to reduce latency.
 - Brotli and gzip compression.
 - Designed to work as a docker base image or as a nanovm unikernel.
 - Includes runtime templating of environment variables (configurable prefix).
