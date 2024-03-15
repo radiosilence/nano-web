@@ -34,7 +34,11 @@ You'll want a `config.json` for your project that looks something like this:
 {
   "Dirs": ["public"],
   "Env": {
-    "SPA_MODE": "1"
+    "SPA_MODE": "1",
+    "PORT": "8081"
+  },
+  "RunConfig": {
+    "Ports": ["8081"]
   }
 }
 ```
