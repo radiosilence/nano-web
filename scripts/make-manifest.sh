@@ -1,5 +1,4 @@
 #!/bin/bash
-PKGNAME="nano-web"
 cat <<EOF
 {
    "Program":"${PKGNAME}_${PKGVERSION}/${PKGNAME}",
