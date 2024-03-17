@@ -13,7 +13,7 @@ pkg-build:
 pkg-create: pkg-clean
 	mkdir -p $(PKGDIR)/sysroot
 	mkdir -p $(PKGDIR)/sysroot/public
-	./scripts/make-manifest.sh > $(PKGDIR)/package.manifest
+	PKGVERSION=$(PKGVERSION) PKGNAME=$(PKGNAME) ./scripts/make-manifest.sh > $(PKGDIR)/package.manifest
 	cp README.md $(PKGDIR)
 
 pkg-add: pkg-create pkg-build
