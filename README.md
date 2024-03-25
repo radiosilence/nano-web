@@ -1,5 +1,7 @@
 # nano-web
 
+![publish-container](https://github.com/radiosilence/nano-web/actions/workflows/publish-container.yml/badge.svg)
+
 Hyper-minimal low-latency webserver for serving SPAs and static content based on fasthttp.
 
 - Precaches, templates, compresses all resources into memory at startup to reduce latency.
