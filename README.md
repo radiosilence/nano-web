@@ -54,7 +54,7 @@ ops image create -c config.json --package radiosilence/nano-web:latest -i my-web
 Then run locally to test:
 
 ```
-ops instance create my-website -c ./config.json
+ops instance create my-website -c ./config.json --port 8081
 ```
 
 # Runtime config for SPAs
