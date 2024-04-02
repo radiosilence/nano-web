@@ -8,7 +8,7 @@ pkg-clean:
 	rm -rf $(RELEASEDIR)
 
 pkg-build:
-	 GOOS=linux go build -o $(PKGDIR)/$(PKGNAME) main.go
+	 GOOS=linux GOARCH=amd64 go build -o $(PKGDIR)/$(PKGNAME) main.go
 
 pkg-create: pkg-clean
 	mkdir -p $(PKGDIR)/sysroot
