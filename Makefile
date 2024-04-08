@@ -1,4 +1,5 @@
 PKGOS=linux
+PKGARCH=amd64
 PKGNAME=nano-web
 PKGVERSION:=$(shell ./scripts/get-version.sh)
 PKGRELEASE=$(PKGNAME)_$(PKGVERSION)
@@ -9,7 +10,7 @@ pkg-clean:
 	rm -rf $(RELEASEDIR)
 
 pkg-build:
-	 GOOS=$(PKGOS) go build -o $(PKGDIR)/$(PKGNAME) main.go
+	 GOOS=$(PKGOS) GOARCH=$(PKGARCH) go build -o $(PKGDIR)/$(PKGNAME) main.go
 
 pkg-create: pkg-clean
 	mkdir -p $(PKGDIR)/sysroot
