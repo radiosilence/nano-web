@@ -22,8 +22,8 @@ pkg-add: pkg-create pkg-build
 	ops pkg add $(PKGDIR) --name $(PKGRELEASE)
 
 pkg-bundle: pkg-add
-	cd $(RELEASEDIR); tar czvf $(PKGRELEASE).tar.gz $(PKGRELEASE)
-	@echo "Release created: $(PKGDIR).tar.gz"
+	cd $(RELEASEDIR); tar czvf $(PKGRELEASE)-$(PKGARCH).tar.gz $(PKGRELEASE)
+	@echo "Release created: $(PKGDIR)-$(PKGARCH).tar.gz"
 
 pkg-push: pkg-add
 	ops pkg push $(PKGRELEASE)
