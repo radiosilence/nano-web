@@ -4,7 +4,7 @@ PKGNAME=nano-web
 PKGVERSION:=$(shell ./scripts/get-version.sh)
 PKGRELEASE=$(PKGNAME)_$(PKGVERSION)
 RELEASEDIR=./release
-PKGDIR=$(RELEASEDIR)/$(PKGRELEASE)
+PKGDIR=$(RELEASEDIR)/$(PKGRELEASE)-$(PKGARCH)
 
 pkg-clean:
 	rm -rf $(RELEASEDIR)
