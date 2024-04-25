@@ -18,7 +18,6 @@ jobs:
     name: Build & Push Package for (${{ inputs.arch }})
     runs-on: ubuntu-latest
     permissions:
-      packages: write
       contents: read
 
     steps:
