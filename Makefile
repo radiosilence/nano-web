@@ -10,7 +10,7 @@ pkg-clean:
 	rm -rf $(RELEASEDIR)
 
 pkg-build:
-	 GOOS=$(PKGOS) GOARCH=$(PKGARCH) go build -o $(PKGDIR)/$(PKGNAME) main.go
+	 CGO_ENABLED=0 GOOS=$(PKGOS) GOARCH=$(PKGARCH) go build -o $(PKGDIR)/$(PKGNAME) main.go
 
 pkg-create: pkg-clean
 	mkdir -p $(PKGDIR)/sysroot

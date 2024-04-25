@@ -5,9 +5,8 @@ permissions:
 
 on:
   push:
-    # tags:
-    #   - v*
-  pull_request:
+    tags:
+      - v*
 
 jobs:
   publish:
