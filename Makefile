@@ -19,7 +19,8 @@ pkg-create: pkg-clean
 	cp README.md $(PKGDIR)
 
 pkg-add: pkg-create pkg-build
-	ops pkg add $(PKGDIR) --name $(PKGRELEASE) --arch $(PKGARCH)
+# TODO: add --arch $(PKGARCH) once ops supports it
+	ops pkg add $(PKGDIR) --name $(PKGRELEASE) 
 
 pkg-bundle: pkg-add
 	cd $(RELEASEDIR); tar czvf $(PKGRELEASE)-$(PKGARCH).tar.gz $(PKGRELEASE)
