@@ -22,14 +22,14 @@ jobs:
       - name: Set up OPS
         run: |
           curl https://ops.city/get.sh -sSfL | sh
+      - name: Set OPS environment variables
+        run: |
+          echo "OPS_DIR=$HOME/.ops" >> $GITHUB_ENV
+          echo "$HOME/.ops/bin" >> $GITHUB_PATH
       - name: Login
         run: |
-          export OPS_DIR="$HOME/.ops"
-          export PATH="$HOME/.ops/bin:$PATH"
           ops pkg login ${{ secrets.OPS_KEY }}
       - name: Push
         run: |
-          export OPS_DIR="$HOME/.ops"
-          export PATH="$HOME/.ops/bin:$PATH"
           echo "Version: $(./scripts/get-version.sh)"
           make pkg-push
