@@ -13,4 +13,4 @@ jobs:
     with:
       arch: amd64
     secrets:
-      envPAT: ${{ secrets.OPS_KEY }}
+      OPS_KEY: ${{ secrets.OPS_KEY }}
