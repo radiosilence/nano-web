@@ -14,8 +14,8 @@ on:
         required: true
 
 jobs:
-  publish:
-    name: Build & Push Package for (${{ inputs.arch }})
+  push:
+    name: Push ${{ inputs.arch }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
