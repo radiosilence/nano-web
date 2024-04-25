@@ -1,3 +1,5 @@
 public
 release
 .DS_Store
+
+node_modules
