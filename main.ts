@@ -36,7 +36,6 @@ function getAppEnv() {
 
 const appEnv = getAppEnv();
 const publicDir = getEnv("PUBLIC_DIR", "public");
-const routes: Routes = {};
 
 function getMimeType(ext: string): string {
   switch (ext) {
@@ -117,7 +116,7 @@ async function templateRoute(name: string, content: string): Promise<string> {
   return content;
 }
 
-function templateType(mimeType: string): boolean {
+function templateType(mimeType: string) {
   switch (mimeType) {
     case "text/html":
     case "text/css":
@@ -129,7 +128,7 @@ function templateType(mimeType: string): boolean {
   }
 }
 
-function compressedType(mimeType: string): boolean {
+function compressedType(mimeType: string) {
   switch (mimeType) {
     case "text/html":
     case "text/css":
@@ -141,15 +140,15 @@ function compressedType(mimeType: string): boolean {
   }
 }
 
-function gzipData(data: Uint8Array): Uint8Array {
+function gzipData(data: Uint8Array) {
   return zlib.gzipSync(data);
 }
 
-function brotliData(data: Uint8Array): Uint8Array {
+function brotliData(data: Uint8Array) {
   return zlib.brotliCompressSync(data);
 }
 
-async function makeRoute(filePath: string): Promise<Route> {
+async function makeRoute(filePath: string) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = getMimeType(ext);
   const plain = await fs.promises.readFile(filePath);
@@ -163,8 +162,16 @@ async function makeRoute(filePath: string): Promise<Route> {
   }
 
   if (compressedType(mimeType)) {
-    content.gzip = gzipData(plain);
-    content.brotli = brotliData(plain);
+    try {
+      content.gzip = gzipData(plain);
+    } catch (err) {
+      console.warn(`⇨ gzip compression failed for ${filePath}: ${err}`);
+    }
+    try {
+      content.brotli = brotliData(plain);
+    } catch (err) {
+      console.warn(`⇨ brotli compression failed for ${filePath}: ${err}`);
+    }
   }
 
   return {
@@ -174,30 +181,34 @@ async function makeRoute(filePath: string): Promise<Route> {
   };
 }
 
-async function populateRoutes(routes: Routes) {
+async function populateRoutes() {
+  const routes: Routes = {};
   try {
     await fs.promises.stat(publicDir);
     const files = await fs.promises.readdir(publicDir);
-    for (const fileName of files) {
-      const filePath = path.join(publicDir, fileName);
+    for (const filename of files) {
+      const filePath = path.join(publicDir, filename);
       try {
         const stats = await fs.promises.stat(filePath);
         if (stats.isFile()) {
-          const routePath = path.relative(publicDir, filePath);
+          const urlPath = path.relative(publicDir, filePath);
           try {
             const route = await makeRoute(filePath);
-            routes[routePath] = route;
-            if (fileName === "index.html") {
-              let indexUrlPath = routePath.replace("/index.html", "");
+            routes[urlPath] = route;
+            if (filename === "index.html") {
+              let indexUrlPath = urlPath.replace("index.html", "");
+              console.log("urlPath", urlPath);
+              console.log("indexUrlPath", indexUrlPath);
               if (indexUrlPath === "") {
                 indexUrlPath = "/";
+              } else {
+                routes[indexUrlPath + "/"] = route;
               }
               routes[indexUrlPath] = route;
-              routes[indexUrlPath + "/"] = route;
             }
-            console.log("⇨ adding route", routePath, "→", filePath);
+            console.log("⇨ adding route", urlPath, "→", filePath);
           } catch (err) {
-            console.error(`⇨ error making route for ${routePath}: ${err}`);
+            console.error(`⇨ error making route for ${urlPath}: ${err}`);
           }
         }
       } catch (err) {
@@ -208,44 +219,39 @@ async function populateRoutes(routes: Routes) {
     console.error(`⇨ public directory not found in: ${publicDir}`);
     process.exit(-1);
   }
+  return routes;
 }
 
-function getAcceptedEncoding(req: Request): string {
+function getAcceptedEncodings(req: Request) {
+  const accepted = [];
   const acceptEncoding = req.headers.get("Accept-Encoding") || "";
   if (acceptEncoding.includes("br")) {
-    return "br";
+    accepted.push("br");
   }
   if (acceptEncoding.includes("gzip")) {
-    return "gzip";
+    accepted.push("gzip");
   }
-  return "";
+  return accepted;
 }
 
 function getEncodedContent(
-  acceptedEncoding: string,
+  acceptedEncodings: string[],
   content: Content
 ): [string, Uint8Array] {
-  switch (acceptedEncoding) {
-    case "br":
-      if (content.brotli) {
-        return ["br", content.brotli];
-      } else {
-        return ["", content.plain];
-      }
-    case "gzip":
-      if (content.gzip) {
-        return ["gzip", content.gzip];
-      } else {
-        return ["", content.plain];
-      }
-    default:
-      return ["", content.plain];
+  if (acceptedEncodings.includes("br") && content.brotli) {
+    return ["br", content.brotli];
   }
+  if (acceptedEncodings.includes("gzip") && content.gzip) {
+    return ["gzip", content.gzip];
+  }
+  return ["", content.plain];
 }
 
-const ROUTES: Record<string, Route> = {};
+const routes = await populateRoutes();
 
-await populateRoutes(ROUTES);
+for (const [path, route] of Object.entries(routes)) {
+  console.log("⇨ serving route", path, route.contentType);
+}
 Bun.serve({
   async fetch(req) {
     const path = new URL(req.url).pathname;
@@ -269,16 +275,14 @@ Bun.serve({
       "Last-Modified": route.lastModified,
     };
 
-    const acceptedEncoding = getAcceptedEncoding(req);
+    const acceptedEncodings = getAcceptedEncodings(req);
     const [encoding, content] = getEncodedContent(
-      acceptedEncoding,
+      acceptedEncodings,
       route.content
     );
     if (encoding) {
       headers["Content-Encoding"] = encoding;
     }
-    return new Response(content, {
-      headers,
-    });
+    return new Response(content, { headers });
   },
 });
