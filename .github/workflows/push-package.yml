@@ -4,12 +4,18 @@ permissions:
   contents: read
 
 on:
-  push:
-    tags:
-      - v*
+  workflow_call:
+    inputs:
+      arch:
+        required: true
+        type: string
+    secrets:
+      OPS_KEY:
+        required: true
 
 jobs:
   publish:
+    name: Build & Push Package for (${{ inputs.arch }})
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -32,4 +38,4 @@ jobs:
       - name: Push
         run: |
           echo "Version: $(./scripts/get-version.sh)"
-          make pkg-push
+          make pkg-push PKGARCH=${{ inputs.arch }}

@@ -1,0 +1,16 @@
+name: Push Package amd64
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags:
+      - v*
+jobs:
+  publish:
+    uses: radiosilence/nano-web/.github/workflows/push-package.yml@main
+    with:
+      arch: amd64
+    secrets:
+      envPAT: ${{ secrets.OPS_KEY }}
