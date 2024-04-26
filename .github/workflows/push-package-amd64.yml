@@ -1,4 +1,4 @@
-name: Push Package amd64
+name: Push OPS Package amd64
 
 permissions:
   contents: read
