@@ -1,4 +1,4 @@
-name: Publish Container
+name: Docker Container
 
 permissions:
   contents: read
