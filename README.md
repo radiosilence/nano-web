@@ -1,6 +1,6 @@
 # nano-web
 
-![publish-container](https://github.com/radiosilence/nano-web/actions/workflows/publish-container.yml/badge.svg) ![publish-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/publish-package-amd64.yml/badge.svg)
+![publish-container](https://github.com/radiosilence/nano-web/actions/workflows/publish-container.yml/badge.svg) ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
 
 Hyper-minimal low-latency webserver for serving SPAs and static content based on fasthttp.
 
