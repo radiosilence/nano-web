@@ -6,15 +6,15 @@ const port = 3000;
 const tasks = [
   {
     id: 1,
-    description: 'Complete monthly financial report'
+    description: 'Complete monthly hoon report'
   },
   {
     id: 2,
-    description: 'Plan team building activity'
+    description: 'Plan hoon building activity'
   },
   {
     id: 3,
-    description: 'Update project documentation'
+    description: 'Update hoon documentation'
   }
 ];
 
