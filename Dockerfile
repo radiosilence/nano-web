@@ -5,7 +5,7 @@ FROM golang:1.24-alpine AS builder
 RUN apk add --no-cache git ca-certificates tzdata curl
 
 # Install task
-RUN go install github.com/go-task/task/v3/cmd/task@latest
+RUN sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d
 
 # Create appuser for security
 RUN adduser -D -g '' appuser
