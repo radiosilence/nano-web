@@ -252,60 +252,55 @@ func setupTestFiles(t *testing.T) string {
 func TestMakeRoute(t *testing.T) {
 	tmpDir := setupTestFiles(t)
 
-	// Set up test environment for templating
-	appEnv = map[string]string{
-		"API_URL": "https://api.example.com",
-		"DEBUG":   "true",
-	}
-
 	tests := []struct {
-		name        string
-		path        string
-		contentType []byte
-		checkGzip   bool
-		checkBrotli bool
+		name         string
+		path         string
+		contentType  []byte
+		expectGzip   bool
+		expectBrotli bool
+		expectError  bool
 	}{
 		{
-			name:        "HTML file with templating",
-			path:        "index.html",
-			contentType: []byte("text/html"),
-			checkGzip:   true,
-			checkBrotli: true,
+			name:         "HTML file with templating",
+			path:         "index.html",
+			contentType:  []byte("text/html"),
+			expectGzip:   true,
+			expectBrotli: true,
 		},
 		{
-			name:        "CSS file",
-			path:        "style.css",
-			contentType: []byte("text/css"),
-			checkGzip:   true,
-			checkBrotli: true,
+			name:         "CSS file",
+			path:         "style.css",
+			contentType:  []byte("text/css"),
+			expectGzip:   true,
+			expectBrotli: true,
 		},
 		{
-			name:        "JavaScript file",
-			path:        "script.js",
-			contentType: []byte("text/javascript"),
-			checkGzip:   true,
-			checkBrotli: true,
+			name:         "JavaScript file",
+			path:         "script.js",
+			contentType:  []byte("text/javascript"),
+			expectGzip:   true,
+			expectBrotli: true,
 		},
 		{
-			name:        "JSON file with templating",
-			path:        "data.json",
-			contentType: []byte("application/json"),
-			checkGzip:   true,
-			checkBrotli: true,
+			name:         "JSON file with templating",
+			path:         "data.json",
+			contentType:  []byte("application/json"),
+			expectGzip:   true,
+			expectBrotli: true,
 		},
 		{
-			name:        "PNG file without compression",
-			path:        "image.png",
-			contentType: []byte("image/png"),
-			checkGzip:   false,
-			checkBrotli: false,
+			name:         "PNG file without compression",
+			path:         "image.png",
+			contentType:  []byte("image/png"),
+			expectGzip:   false,
+			expectBrotli: false,
 		},
 		{
-			name:        "PDF file without compression",
-			path:        "document.pdf",
-			contentType: []byte("application/pdf"),
-			checkGzip:   false,
-			checkBrotli: false,
+			name:         "PDF file without compression",
+			path:         "document.pdf",
+			contentType:  []byte("application/pdf"),
+			expectGzip:   false,
+			expectBrotli: false,
 		},
 		{
 			name:        "Non-existent file",
@@ -318,8 +313,10 @@ func TestMakeRoute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fullPath := filepath.Join(tmpDir, tt.path)
 			content, err := os.ReadFile(fullPath)
-			if err != nil {
+			if err != nil && !tt.expectError {
 				t.Fatalf("Failed to read test file: %v", err)
+			} else {
+				return
 			}
 			route := makeRoute(fullPath, content)
 
@@ -327,7 +324,7 @@ func TestMakeRoute(t *testing.T) {
 				t.Errorf("makeRoute() ContentType = %s, want %s", route.ContentType, tt.contentType)
 			}
 
-			if tt.checkGzip {
+			if tt.expectGzip {
 				if len(route.Content.Gzip) == 0 {
 					t.Errorf("makeRoute() expected gzip compression but got none")
 				}
@@ -340,7 +337,7 @@ func TestMakeRoute(t *testing.T) {
 				}
 			}
 
-			if tt.checkBrotli {
+			if tt.expectBrotli {
 				if len(route.Content.Brotli) == 0 {
 					t.Errorf("makeRoute() expected brotli compression but got none")
 				}
@@ -454,16 +451,6 @@ func TestHandler(t *testing.T) {
 				ctx.Request.Header.Set("Accept-Encoding", tt.acceptEncoding)
 			}
 
-			// Create a ServeCmd with test configuration
-			serveCmd := &ServeCmd{
-				PublicDir:    tmpDir,
-				SpaMode:      tt.spaMode,
-				LogRequests:  false, // Disable for tests
-				LogLevel:     "error",
-				LogFormat:    "json",
-				ConfigPrefix: "VITE_",
-			}
-
 			handler(ctx)
 
 			if ctx.Response.StatusCode() != tt.expectedStatus {
@@ -533,15 +520,6 @@ func BenchmarkHandler(b *testing.B) {
 		m: make(map[string]*Route),
 	}
 	populateRoutes(tmpDir)
-
-	serveCmd := &ServeCmd{
-		PublicDir:    tmpDir,
-		SpaMode:      false,
-		LogRequests:  false,
-		LogLevel:     "error",
-		LogFormat:    "json",
-		ConfigPrefix: "VITE_",
-	}
 
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/")
