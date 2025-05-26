@@ -31,6 +31,7 @@ jobs:
         uses: arduino/setup-task@v1
         with:
           version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up OPS
         run: |
           curl https://ops.city/get.sh -sSfL | sh
