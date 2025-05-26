@@ -30,42 +30,42 @@ tasks:
 
   run:
     desc: "🏃 Run with go run"
-    cmd: go run . serve --port 8080 --log-format console --log-level debug
+    cmd: go run ./src serve --port 8080 --log-format console --log-level debug
 
   build:
     desc: "🏗️ Build binary"
     sources:
-      - "*.go"
+      - "src/*.go"
       - "go.mod"
       - "go.sum"
     generates:
       - "{{.PKGNAME}}"
-    cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.PKGNAME}} .
+    cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.PKGNAME}} ./src
 
   build-all:
     desc: "🌍 Build for all platforms"
     deps: [clean-dist]
     cmds:
       - mkdir -p dist
-      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-amd64 .
-      - GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-arm64 .
-      - GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-amd64 .
-      - GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-arm64 .
-      - GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-windows-amd64.exe .
-      - GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-freebsd-amd64 .
+      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-amd64 ./src
+      - GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-arm64 ./src
+      - GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-amd64 ./src
+      - GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-arm64 ./src
+      - GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-windows-amd64.exe ./src
+      - GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-freebsd-amd64 ./src
 
   test:
     desc: "🧪 Run tests"
     env:
       CGO_ENABLED: 1
-    cmd: go test -v -race ./...
+    cmd: go test -v -race ./src
 
   test-coverage:
     desc: "📊 Run tests with coverage"
     env:
       CGO_ENABLED: 1
     cmds:
-      - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      - go test -v -race -coverprofile=coverage.out -covermode=atomic ./src
       - go tool cover -html=coverage.out -o coverage.html
       - echo "Coverage report generated coverage.html"
 
@@ -73,21 +73,21 @@ tasks:
     desc: "🔥 Run benchmarks"
     env:
       CGO_ENABLED: 1
-    cmd: go test -bench=. -benchmem -count=3 ./...
+    cmd: go test -bench=. -benchmem -count=3 ./src
 
   lint:
     desc: "🔍 Run linter"
-    cmd: golangci-lint run
+    cmd: golangci-lint run ./src/...
 
   fmt:
     desc: "✨ Format code"
     cmds:
-      - go fmt ./...
-      - goimports -w .
+      - go fmt ./src/...
+      - goimports -w ./src
 
   vet:
     desc: "🔎 Run go vet"
-    cmd: go vet ./...
+    cmd: go vet ./src/...
 
   check:
     desc: "✅ Run all checks"
@@ -103,7 +103,7 @@ tasks:
   deps-update:
     desc: "⬆️ Update dependencies"
     cmds:
-      - go get -u ./...
+      - go get -u ./src/...
       - go mod tidy
 
   clean:
@@ -149,7 +149,7 @@ tasks:
       GOARCH: "{{.PKGARCH}}"
     cmd: |
       mkdir -p {{.PKGDIR}}
-      go build -ldflags="{{.LDFLAGS}}" -o {{.PKGDIR}}/{{.PKGNAME}} .
+      go build -ldflags="{{.LDFLAGS}}" -o {{.PKGDIR}}/{{.PKGNAME}} ./src
 
   pkg-create:
     desc: "📁 Create OPS package structure"

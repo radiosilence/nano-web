@@ -201,22 +201,19 @@ func TestGetAcceptedEncoding(t *testing.T) {
 	tests := []struct {
 		name           string
 		acceptEncoding string
-		expected       int
+		expected       string
 	}{
-		{"brotli preferred", "gzip, deflate, br", 2},
-		{"gzip only", "gzip, deflate", 1},
-		{"no compression", "identity", 0},
-		{"empty header", "", 0},
-		{"brotli first", "br, gzip", 2},
-		{"gzip first", "gzip, br", 2}, // br is still preferred
+		{"no encoding", "", ""},
+		{"gzip only", "gzip", "gzip"},
+		{"brotli only", "br", "br"},
+		{"both", "gzip, br", "br"},
+		{"brotli first", "br, gzip", "br"},
+		{"gzip first", "gzip, br", "br"}, // br is still preferred
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := &fasthttp.RequestCtx{}
-			ctx.Request.Header.Set("Accept-Encoding", tt.acceptEncoding)
-
-			result := getAcceptedEncoding(ctx)
+			result := getAcceptedEncoding([]byte(tt.acceptEncoding))
 			if result != tt.expected {
 				t.Errorf("getAcceptedEncoding() = %v, want %v", result, tt.expected)
 			}
@@ -229,12 +226,12 @@ func setupTestFiles(t *testing.T) string {
 
 	// Create test files
 	files := map[string]string{
-		"index.html":     "<html><body>{{.Env.API_URL}}</body></html>",
-		"style.css":      "body { margin: 0; }",
-		"script.js":      "console.log('{{.Env.DEBUG}}');",
-		"data.json":      `{"key": "{{.Env.API_URL}}"}`,
-		"image.png":      "fake png data",
-		"document.pdf":   "fake pdf data",
+		"index.html":       "<html><body>{{.Env.API_URL}}</body></html>",
+		"style.css":        "body { margin: 0; }",
+		"script.js":        "console.log('{{.Env.DEBUG}}');",
+		"data.json":        `{"key": "{{.Env.API_URL}}"}`,
+		"image.png":        "fake png data",
+		"document.pdf":     "fake pdf data",
 		"nested/page.html": "<html><body>Nested</body></html>",
 	}
 
@@ -264,7 +261,6 @@ func TestMakeRoute(t *testing.T) {
 	tests := []struct {
 		name        string
 		path        string
-		expectError bool
 		contentType []byte
 		checkGzip   bool
 		checkBrotli bool
@@ -272,23 +268,20 @@ func TestMakeRoute(t *testing.T) {
 		{
 			name:        "HTML file with templating",
 			path:        "index.html",
-			expectError: false,
 			contentType: []byte("text/html"),
 			checkGzip:   true,
 			checkBrotli: true,
 		},
 		{
-			name:        "CSS file with templating",
+			name:        "CSS file",
 			path:        "style.css",
-			expectError: false,
 			contentType: []byte("text/css"),
 			checkGzip:   true,
 			checkBrotli: true,
 		},
 		{
-			name:        "JavaScript file with templating",
+			name:        "JavaScript file",
 			path:        "script.js",
-			expectError: false,
 			contentType: []byte("text/javascript"),
 			checkGzip:   true,
 			checkBrotli: true,
@@ -296,7 +289,6 @@ func TestMakeRoute(t *testing.T) {
 		{
 			name:        "JSON file with templating",
 			path:        "data.json",
-			expectError: false,
 			contentType: []byte("application/json"),
 			checkGzip:   true,
 			checkBrotli: true,
@@ -304,7 +296,6 @@ func TestMakeRoute(t *testing.T) {
 		{
 			name:        "PNG file without compression",
 			path:        "image.png",
-			expectError: false,
 			contentType: []byte("image/png"),
 			checkGzip:   false,
 			checkBrotli: false,
@@ -312,7 +303,6 @@ func TestMakeRoute(t *testing.T) {
 		{
 			name:        "PDF file without compression",
 			path:        "document.pdf",
-			expectError: false,
 			contentType: []byte("application/pdf"),
 			checkGzip:   false,
 			checkBrotli: false,
@@ -327,18 +317,11 @@ func TestMakeRoute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fullPath := filepath.Join(tmpDir, tt.path)
-			route, err := makeRoute(fullPath)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("makeRoute() expected error but got none")
-				}
-				return
-			}
-
+			content, err := os.ReadFile(fullPath)
 			if err != nil {
-				t.Fatalf("makeRoute() error = %v", err)
+				t.Fatalf("Failed to read test file: %v", err)
 			}
+			route := makeRoute(fullPath, content)
 
 			if !bytes.Equal(route.ContentType, tt.contentType) {
 				t.Errorf("makeRoute() ContentType = %s, want %s", route.ContentType, tt.contentType)
@@ -395,8 +378,8 @@ func TestHandler(t *testing.T) {
 	populateRoutes(tmpDir)
 
 	// Reset counters
-	atomic.StoreUint64(&requestCount, 0)
-	atomic.StoreUint64(&errorCount, 0)
+	atomic.StoreInt64(&requestCount, 0)
+	atomic.StoreInt64(&errorCount, 0)
 
 	tests := []struct {
 		name           string
@@ -481,7 +464,7 @@ func TestHandler(t *testing.T) {
 				ConfigPrefix: "VITE_",
 			}
 
-			handler(ctx, serveCmd)
+			handler(ctx)
 
 			if ctx.Response.StatusCode() != tt.expectedStatus {
 				t.Errorf("handler() status = %d, want %d", ctx.Response.StatusCode(), tt.expectedStatus)
@@ -510,8 +493,8 @@ func TestPopulateRoutes(t *testing.T) {
 	// Check that routes were created
 	expectedRoutes := []string{
 		"/index.html",
-		"/",          // index route
-		"//",         // index route with trailing slash
+		"/",  // index route
+		"//", // index route with trailing slash
 		"/style.css",
 		"/script.js",
 		"/data.json",
@@ -521,7 +504,7 @@ func TestPopulateRoutes(t *testing.T) {
 	}
 
 	for _, routePath := range expectedRoutes {
-		if _, exists := getRoute(routePath); !exists {
+		if route := getRoute(routePath); route == nil {
 			t.Errorf("Expected route %s was not created", routePath)
 		}
 	}
@@ -567,7 +550,7 @@ func BenchmarkHandler(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx.Response.Reset()
-		handler(ctx, serveCmd)
+		handler(ctx)
 	}
 }
 
