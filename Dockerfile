@@ -31,9 +31,6 @@ FROM scratch
 # Copy the binary
 COPY --from=builder /build/nano-web /nano-web
 
-# Use non-root user
-USER appuser
-
 # Set default environment variables
 ENV PORT=80
 ENV SPA_MODE=0
