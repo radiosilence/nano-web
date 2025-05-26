@@ -13,9 +13,62 @@ Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed f
 - 🔧 **Runtime environment injection** - Safely inject environment variables into JS at runtime, perfect for easily configuring containers without rebuilding
 - 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing
 
-## 🚀 Quick Start
+## 🐳 Docker
 
-### CLI Usage
+```dockerfile
+FROM ghcr.io/radiosilence/nano-web:latest
+COPY ./dist /public/
+```
+
+Multi-stage builds work great too:
+
+```dockerfile
+FROM node:18-alpine AS build
+WORKDIR /app
+COPY . .
+RUN npm run build
+
+FROM ghcr.io/radiosilence/nano-web:latest
+COPY --from=build /app/dist /public/
+ENV SPA_MODE=true
+ENV PORT=3000
+```
+
+## 🔧 Runtime Environment Injection
+
+Instead of rebuilding your app for different environments, inject configuration at runtime:
+
+```html
+<!-- Your index.html -->
+<script>
+  window.ENV = {{.Json}};  // Runtime environment injection
+</script>
+```
+
+```typescript
+// Your React/Vue/whatever app
+const config = window.ENV || {};
+const apiUrl = config.API_URL || "fallback";
+```
+
+```bash
+# Same build, different configs
+docker run -e VITE_API_URL=http://localhost:3001 my-app    # dev
+docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
+```
+
+## ⚙️ Configuration
+
+| Variable        | CLI Flag          | Default | Description                                       |
+| --------------- | ----------------- | ------- | ------------------------------------------------- |
+| `PORT`          | `--port`          | `80`    | Port to listen on                                 |
+| `SPA_MODE`      | `--spa-mode`      | `false` | Enable SPA mode (serve index.html for 404s)       |
+| `CONFIG_PREFIX` | `--config-prefix` | `VITE_` | Prefix for runtime environment variable injection |
+| `LOG_LEVEL`     | `--log-level`     | `info`  | Logging level: `debug`, `info`, `warn`, `error`   |
+| `LOG_FORMAT`    | `--log-format`    | `json`  | Log format: `json` or `console`                   |
+| `LOG_REQUESTS`  | `--log-requests`  | `true`  | Enable/disable request logging                    |
+
+### 📺 CLI Usage
 
 #### Install via Go
 
@@ -35,7 +88,7 @@ chmod +x nano-web-linux-amd64
 mv nano-web-linux-amd64 /usr/local/bin/nano-web
 ```
 
-#### Usage Examples
+### Usage Examples
 
 ```bash
 # Basic usage - serve files from ./public/ on port 80
@@ -58,157 +111,6 @@ nano-web health-check
 nano-web version
 ```
 
-### Docker
-
-```dockerfile
-FROM ghcr.io/radiosilence/nano-web:latest
-COPY ./dist /public/
-ENV PORT=8080
-ENV SPA_MODE=true
-ENV LOG_LEVEL=info
-```
-
-## ⚙️ Configuration
-
-Configuration can be done via CLI flags, environment variables, or a combination of both. CLI flags take precedence over environment variables.
-
-### CLI Flags
-
-```bash
-nano-web <command>
-
-Commands:
-  serve           Start the web server (default)
-  health-check    Perform health check and exit
-  version         Show version information
-
-# For the serve command:
-nano-web serve [PUBLIC_DIR] [flags]
-
-Arguments:
-  PUBLIC_DIR                  Directory containing static files to serve (default: "public")
-
-Flags:
-  -p, --port INT              Port to listen on (default: 80)
-  -s, --spa-mode              Enable SPA mode (serve index.html for 404s)
-      --config-prefix STRING  Prefix for runtime environment variable injection (default: "VITE_")
-      --log-level STRING      Logging level (debug|info|warn|error) (default: "info")
-      --log-format STRING     Log format (json|console) (default: "json")
-      --log-requests          Enable request logging (default: true)
-  -h, --help                  Show context-sensitive help
-```
-
-### Environment Variables
-
-| Variable        | CLI Flag          | Default | Description                                       |
-| --------------- | ----------------- | ------- | ------------------------------------------------- |
-| `PORT`          | `--port`          | `80`    | Port to listen on                                 |
-| `SPA_MODE`      | `--spa-mode`      | `false` | Enable SPA mode (serve index.html for 404s)       |
-| `CONFIG_PREFIX` | `--config-prefix` | `VITE_` | Prefix for runtime environment variable injection |
-| `LOG_LEVEL`     | `--log-level`     | `info`  | Logging level: `debug`, `info`, `warn`, `error`   |
-| `LOG_FORMAT`    | `--log-format`    | `json`  | Log format: `json` or `console`                   |
-| `LOG_REQUESTS`  | `--log-requests`  | `true`  | Enable/disable request logging                    |
-
-### Usage Examples
-
-```bash
-# Basic usage with defaults
-nano-web serve
-
-# Serve custom directory on different port
-nano-web serve ./dist --port 8080
-
-# SPA mode with console logging for development
-nano-web serve ./build --spa-mode --log-format console --log-level debug
-
-# Production setup with custom config prefix
-nano-web serve /var/www --port 443 --config-prefix REACT_APP_ --log-level warn
-
-# Health check (useful for Docker health checks)
-nano-web health-check
-
-# Show version
-nano-web version
-```
-
-## ⚙️ Configuration
-
-All configuration is done via environment variables:
-
-| Variable        | Default  | Description                                             |
-| --------------- | -------- | ------------------------------------------------------- |
-| `PORT`          | `80`     | Port to listen on                                       |
-| `PUBLIC_DIR`    | `public` | Directory containing static files                       |
-| `SPA_MODE`      | `0`      | Set to `1` to serve `index.html` for 404s (SPA routing) |
-| `CONFIG_PREFIX` | `VITE_`  | Prefix for runtime environment variable injection       |
-| `LOG_LEVEL`     | `info`   | Logging level: `debug`, `info`, `warn`, `error`         |
-| `LOG_FORMAT`    | `json`   | Log format: `json` or `console`                         |
-| `LOG_REQUESTS`  | `true`   | Enable/disable request logging                          |
-
-## 🐳 Docker Examples
-
-### Simple Static Site
-
-### Docker
-
-```dockerfile
-FROM ghcr.io/radiosilence/nano-web:latest
-COPY ./dist /public/
-ENV PORT=8080
-ENV SPA_MODE=true
-```
-
-Multi-stage builds work great too:
-
-```dockerfile
-FROM node:18-alpine AS build
-WORKDIR /app
-COPY . .
-RUN npm run build
-
-FROM ghcr.io/radiosilence/nano-web:latest
-COPY --from=build /app/dist /public/
-ENV SPA_MODE=true
-```
-
-### Configuration
-
-Create a `config.json`:
-
-```json
-{
-  "Dirs": ["public"],
-  "Args": [
-    "serve",
-    "./public",
-    "--port",
-    "8080",
-    "--spa-mode",
-    "--log-level",
-    "info"
-  ],
-  "RunConfig": {
-    "Ports": ["8080"]
-  }
-}
-```
-
-Alternatively, use environment variables:
-
-```json
-{
-  "Dirs": ["public"],
-  "Env": {
-    "PORT": "8080",
-    "SPA_MODE": "true",
-    "LOG_LEVEL": "info"
-  },
-  "RunConfig": {
-    "Ports": ["8080"]
-  }
-}
-```
-
 ### Build and Run
 
 ```bash
@@ -222,28 +124,6 @@ ops instance create my-website -c ./config.json --port 8080
 ops instance create my-website -c ./config.json -t gcp
 ```
 
-## 🎯 Nanos/OPS Unikernel
-
-Perfect for ultra-lightweight unikernel deployments:
-
-### Configuration
-
-Create a `config.json`:
-
-```json
-{
-  "Dirs": ["public"],
-  "Env": {
-    "SPA_MODE": "1",
-    "PORT": "8080",
-    "LOG_LEVEL": "info"
-  },
-  "RunConfig": {
-    "Ports": ["8080"]
-  }
-}
-```
-
 ### Build and Run
 
 ```bash
@@ -255,29 +135,6 @@ ops instance create my-website -c ./config.json --port 8080
 
 # Deploy to cloud
 ops instance create my-website -c ./config.json -t gcp
-```
-
-## 🔧 Runtime Environment Injection
-
-This is nano-web's secret sauce for SPAs. Instead of rebuilding your app for different environments, inject configuration at runtime:
-
-```html
-<!-- Your index.html -->
-<script>
-  window.ENV = {{.Json}};  // Runtime environment injection
-</script>
-```
-
-```typescript
-// Your React/Vue/whatever app
-const config = window.ENV || {};
-const apiUrl = config.API_URL || "fallback";
-```
-
-```bash
-# Same build, different configs
-docker run -e VITE_API_URL=http://localhost:3001 my-app    # dev
-docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
 ```
 
 **⚠️ Public config only** - don't put secrets here.
