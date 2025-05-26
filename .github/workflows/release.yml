@@ -3,13 +3,13 @@ name: 🚀 Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release'
+        description: "Tag to release"
         required: true
-        default: 'v0.2.0'
+        default: "v0.2.0"
 
 permissions:
   contents: write
@@ -19,15 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: 🐹 Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
-          
+          go-version: "1.23"
+
       - name: 🧪 Run tests
         run: go test -v ./...
-        
+
       - name: 🔥 Run benchmarks
         run: go test -bench=. -benchmem ./...
 
@@ -49,10 +49,6 @@ jobs:
           - goos: darwin
             goarch: arm64
             name: darwin-arm64
-          - goos: windows
-            goarch: amd64
-            name: windows-amd64
-            ext: .exe
           - goos: freebsd
             goarch: amd64
             name: freebsd-amd64
@@ -62,15 +58,15 @@ jobs:
           - goos: netbsd
             goarch: amd64
             name: netbsd-amd64
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: 🐹 Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
-          
+          go-version: "1.24"
+
       - name: 📋 Get version
         id: version
         run: |
@@ -79,7 +75,7 @@ jobs:
           else
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
-          
+
       - name: 🏗️ Build binary
         env:
           GOOS: ${{ matrix.goos }}
@@ -88,19 +84,19 @@ jobs:
         run: |
           go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
             -o nano-web-${{ matrix.name }}${{ matrix.ext }} main.go
-            
+
       - name: 📦 Create tarball (Unix)
         if: matrix.goos != 'windows'
         run: |
           tar -czf nano-web-${{ matrix.name }}.tar.gz nano-web-${{ matrix.name }}
-          
+
       - name: 📦 Create zip (Windows)
         if: matrix.goos == 'windows'
         run: |
           zip nano-web-${{ matrix.name }}.zip nano-web-${{ matrix.name }}${{ matrix.ext }}
-          
+
       - name: ⬆️ Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: nano-web-${{ matrix.name }}
           path: |
@@ -113,7 +109,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: 📋 Get version
         id: version
         run: |
@@ -122,12 +118,12 @@ jobs:
           else
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
-          
+
       - name: ⬇️ Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-          
+
       - name: 📁 Move artifacts to release directory
         run: |
           mkdir -p release
@@ -135,7 +131,7 @@ jobs:
             cp "$file" release/
           done
           ls -la release/
-          
+
       - name: 📝 Generate changelog
         id: changelog
         run: |
@@ -154,13 +150,13 @@ jobs:
             echo "$CHANGELOG" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           fi
-          
+
       - name: 🔐 Create checksums
         run: |
           cd release
           sha256sum * > checksums.txt
           cat checksums.txt
-          
+
       - name: 🚀 Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -168,19 +164,19 @@ jobs:
           name: nano-web ${{ steps.version.outputs.version }}
           body: |
             # nano-web ${{ steps.version.outputs.version }}
-            
+
             🚀 **Ultra-fast static file server for SPAs and static content**
-            
+
             ## Installation
-            
+
             ### Go Install
             ```bash
             go install github.com/radiosilence/nano-web@${{ steps.version.outputs.version }}
             ```
-            
+
             ### Download Binary
             Download the appropriate binary for your platform from the assets below.
-            
+
             #### Linux/macOS/FreeBSD/OpenBSD/NetBSD
             ```bash
             # Example for Linux AMD64
@@ -189,23 +185,23 @@ jobs:
             chmod +x nano-web-linux-amd64
             ./nano-web-linux-amd64 serve --help
             ```
-            
+
             #### Windows
             ```powershell
             # Download and extract nano-web-windows-amd64.zip
             # Run nano-web-windows-amd64.exe serve --help
             ```
-            
+
             ## What's New
-            
+
             ${{ steps.changelog.outputs.changelog }}
-            
+
             ## Verification
-            
+
             All binaries are signed and checksums are provided in `checksums.txt`.
-            
+
             ---
-            
+
             **Full Changelog**: https://github.com/radiosilence/nano-web/compare/v0.1.0...${{ steps.version.outputs.version }}
           files: |
             release/*
