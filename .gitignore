@@ -1,3 +1,23 @@
 public
 release
 .DS_Store
+
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+*.prof
+
+# Build artifacts
+nano-web
+nano-web-*
+dist/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
