@@ -38,13 +38,13 @@ jobs:
             ${{ runner.os }}-go-${{ matrix.go-version }}-
             ${{ runner.os }}-go-
 
-      - name: 📦 Download dependencies
-        run: task deps
-
       - name: 🔧 Set up Task
         uses: arduino/setup-task@v1
         with:
           version: 3.x
+
+      - name: 📦 Download dependencies
+        run: task deps
 
       - name: 🏗️ Build
         run: task build
