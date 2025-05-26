@@ -33,7 +33,7 @@ func healthCheckHandler(ctx *fasthttp.RequestCtx) {
 	ctx.WriteString(`{"status":"ok","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `"}`)
 }
 
-func handler(ctx *fasthttp.RequestCtx) {
+func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
 	atomic.AddInt64(&requestCount, 1)
 
 	path := string(ctx.Path())
@@ -51,12 +51,12 @@ func handler(ctx *fasthttp.RequestCtx) {
 		if !bytes.HasSuffix(ctx.Path(), []byte("/")) {
 			route = getRoute(path + "/")
 		}
-		
+
 		// SPA fallback - serve index.html for unmatched routes
-		if route == nil {
+		if route == nil && s.SpaMode {
 			route = getRoute("/")
 		}
-		
+
 		if route == nil {
 			atomic.AddInt64(&errorCount, 1)
 			ctx.SetStatusCode(fasthttp.StatusNotFound)
@@ -75,7 +75,7 @@ func handler(ctx *fasthttp.RequestCtx) {
 	acceptEncodingHeader := ctx.Request.Header.Peek("Accept-Encoding")
 	if len(acceptEncodingHeader) > 0 && (route.Content.GzipLen > 0 || route.Content.BrotliLen > 0) {
 		encoding := getAcceptedEncoding(acceptEncodingHeader)
-		
+
 		switch encoding {
 		case "br":
 			if route.Content.BrotliLen > 0 {
@@ -97,13 +97,13 @@ func handler(ctx *fasthttp.RequestCtx) {
 	ctx.SetBody(route.Content.Plain)
 }
 
-func startServer(addr string, logRequests bool) error {
+func startServer(addr string, s *ServeCmd) error {
 	server := &fasthttp.Server{
 		Handler: func(ctx *fasthttp.RequestCtx) {
 			start := time.Now()
-			handler(ctx)
-			
-			if logRequests {
+			handler(ctx, s)
+
+			if s.LogRequests {
 				duration := time.Since(start)
 				log.Info().
 					Str("method", string(ctx.Method())).
@@ -122,7 +122,7 @@ func startServer(addr string, logRequests bool) error {
 
 	log.Info().
 		Str("addr", addr).
-		Bool("log_requests", logRequests).
+		Bool("log_requests", s.LogRequests).
 		Msg("starting server")
 
 	return server.ListenAndServe(addr)

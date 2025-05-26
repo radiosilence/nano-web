@@ -451,7 +451,9 @@ func TestHandler(t *testing.T) {
 				ctx.Request.Header.Set("Accept-Encoding", tt.acceptEncoding)
 			}
 
-			handler(ctx)
+			handler(ctx, &ServeCmd{
+				SpaMode: tt.spaMode,
+			})
 
 			if ctx.Response.StatusCode() != tt.expectedStatus {
 				t.Errorf("handler() status = %d, want %d", ctx.Response.StatusCode(), tt.expectedStatus)
@@ -528,7 +530,7 @@ func BenchmarkHandler(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx.Response.Reset()
-		handler(ctx)
+		handler(ctx, &ServeCmd{})
 	}
 }
 
