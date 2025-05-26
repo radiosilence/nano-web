@@ -85,84 +85,84 @@ var mimetypes = map[string][]byte{
 	".yml":           []byte("text/plain"),
 	".zig":           []byte("text/plain"),
 	".zsh":           []byte("text/plain"),
-	
+
 	// Images
-	".gif":           []byte("image/gif"),
-	".ico":           []byte("image/x-icon"),
-	".jpeg":          []byte("image/jpeg"),
-	".jpg":           []byte("image/jpeg"),
-	".png":           []byte("image/png"),
-	".bmp":           []byte("image/bmp"),
-	".svg":           []byte("image/svg+xml"),
-	".webp":          []byte("image/webp"),
-	".tiff":          []byte("image/tiff"),
-	".tif":           []byte("image/tiff"),
-	".avif":          []byte("image/avif"),
-	".heic":          []byte("image/heic"),
-	".heif":          []byte("image/heif"),
-	
+	".gif":  []byte("image/gif"),
+	".ico":  []byte("image/x-icon"),
+	".jpeg": []byte("image/jpeg"),
+	".jpg":  []byte("image/jpeg"),
+	".png":  []byte("image/png"),
+	".bmp":  []byte("image/bmp"),
+	".svg":  []byte("image/svg+xml"),
+	".webp": []byte("image/webp"),
+	".tiff": []byte("image/tiff"),
+	".tif":  []byte("image/tiff"),
+	".avif": []byte("image/avif"),
+	".heic": []byte("image/heic"),
+	".heif": []byte("image/heif"),
+
 	// Fonts
-	".eot":           []byte("application/vnd.ms-fontobject"),
-	".otf":           []byte("font/otf"),
-	".ttf":           []byte("font/ttf"),
-	".woff":          []byte("font/woff"),
-	".woff2":         []byte("font/woff2"),
-	
+	".eot":   []byte("application/vnd.ms-fontobject"),
+	".otf":   []byte("font/otf"),
+	".ttf":   []byte("font/ttf"),
+	".woff":  []byte("font/woff"),
+	".woff2": []byte("font/woff2"),
+
 	// Audio
-	".mp3":           []byte("audio/mpeg"),
-	".ogg":           []byte("audio/ogg"),
-	".wav":           []byte("audio/wav"),
-	".aac":           []byte("audio/aac"),
-	".flac":          []byte("audio/flac"),
-	".m4a":           []byte("audio/mp4"),
-	".opus":          []byte("audio/opus"),
-	
+	".mp3":  []byte("audio/mpeg"),
+	".ogg":  []byte("audio/ogg"),
+	".wav":  []byte("audio/wav"),
+	".aac":  []byte("audio/aac"),
+	".flac": []byte("audio/flac"),
+	".m4a":  []byte("audio/mp4"),
+	".opus": []byte("audio/opus"),
+
 	// Video
-	".mp4":           []byte("video/mp4"),
-	".webm":          []byte("video/webm"),
-	".avi":           []byte("video/x-msvideo"),
-	".mov":           []byte("video/quicktime"),
-	".wmv":           []byte("video/x-ms-wmv"),
-	".flv":           []byte("video/x-flv"),
-	".mkv":           []byte("video/x-matroska"),
-	".m4v":           []byte("video/mp4"),
-	
+	".mp4":  []byte("video/mp4"),
+	".webm": []byte("video/webm"),
+	".avi":  []byte("video/x-msvideo"),
+	".mov":  []byte("video/quicktime"),
+	".wmv":  []byte("video/x-ms-wmv"),
+	".flv":  []byte("video/x-flv"),
+	".mkv":  []byte("video/x-matroska"),
+	".m4v":  []byte("video/mp4"),
+
 	// Documents
-	".doc":           []byte("application/msword"),
-	".docx":          []byte("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-	".xls":           []byte("application/vnd.ms-excel"),
-	".xlsx":          []byte("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-	".ppt":           []byte("application/vnd.ms-powerpoint"),
-	".pptx":          []byte("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
-	".pdf":           []byte("application/pdf"),
-	".rtf":           []byte("application/rtf"),
-	".odt":           []byte("application/vnd.oasis.opendocument.text"),
-	".ods":           []byte("application/vnd.oasis.opendocument.spreadsheet"),
-	".odp":           []byte("application/vnd.oasis.opendocument.presentation"),
-	
+	".doc":  []byte("application/msword"),
+	".docx": []byte("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+	".xls":  []byte("application/vnd.ms-excel"),
+	".xlsx": []byte("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+	".ppt":  []byte("application/vnd.ms-powerpoint"),
+	".pptx": []byte("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+	".pdf":  []byte("application/pdf"),
+	".rtf":  []byte("application/rtf"),
+	".odt":  []byte("application/vnd.oasis.opendocument.text"),
+	".ods":  []byte("application/vnd.oasis.opendocument.spreadsheet"),
+	".odp":  []byte("application/vnd.oasis.opendocument.presentation"),
+
 	// Archives
-	".zip":           []byte("application/zip"),
-	".tar":           []byte("application/x-tar"),
-	".gz":            []byte("application/gzip"),
-	".bz2":           []byte("application/x-bzip2"),
-	".rar":           []byte("application/vnd.rar"),
-	".7z":            []byte("application/x-7z-compressed"),
-	".xz":            []byte("application/x-xz"),
-	
+	".zip": []byte("application/zip"),
+	".tar": []byte("application/x-tar"),
+	".gz":  []byte("application/gzip"),
+	".bz2": []byte("application/x-bzip2"),
+	".rar": []byte("application/vnd.rar"),
+	".7z":  []byte("application/x-7z-compressed"),
+	".xz":  []byte("application/x-xz"),
+
 	// Other common types
-	".jsonld":        []byte("application/ld+json"),
-	".rss":           []byte("application/rss+xml"),
-	".atom":          []byte("application/atom+xml"),
-	".manifest":      []byte("application/manifest+json"),
-	".webmanifest":   []byte("application/manifest+json"),
-	".appcache":      []byte("text/cache-manifest"),
-	".map":           []byte("application/json"),
-	".bin":           []byte("application/octet-stream"),
-	".exe":           []byte("application/octet-stream"),
-	".dmg":           []byte("application/octet-stream"),
-	".deb":           []byte("application/octet-stream"),
-	".rpm":           []byte("application/octet-stream"),
-	".msi":           []byte("application/octet-stream"),
+	".jsonld":      []byte("application/ld+json"),
+	".rss":         []byte("application/rss+xml"),
+	".atom":        []byte("application/atom+xml"),
+	".manifest":    []byte("application/manifest+json"),
+	".webmanifest": []byte("application/manifest+json"),
+	".appcache":    []byte("text/cache-manifest"),
+	".map":         []byte("application/json"),
+	".bin":         []byte("application/octet-stream"),
+	".exe":         []byte("application/octet-stream"),
+	".dmg":         []byte("application/octet-stream"),
+	".deb":         []byte("application/octet-stream"),
+	".rpm":         []byte("application/octet-stream"),
+	".msi":         []byte("application/octet-stream"),
 }
 
 var defaultMimetype = []byte("application/octet-stream")
@@ -195,63 +195,63 @@ var compressibleMimeTypes = map[string]bool{
 // MIME types that should NOT be compressed (binary/already compressed)
 var nonCompressibleMimeTypes = map[string]bool{
 	// Images (already compressed)
-	"image/jpeg":    true,
-	"image/png":     true,
-	"image/gif":     true,
-	"image/webp":    true,
-	"image/avif":    true,
-	"image/heic":    true,
-	"image/heif":    true,
-	"image/bmp":     true,
-	"image/tiff":    true,
-	"image/x-icon":  true,
-	
+	"image/jpeg":   true,
+	"image/png":    true,
+	"image/gif":    true,
+	"image/webp":   true,
+	"image/avif":   true,
+	"image/heic":   true,
+	"image/heif":   true,
+	"image/bmp":    true,
+	"image/tiff":   true,
+	"image/x-icon": true,
+
 	// Audio (already compressed)
-	"audio/mpeg":    true,
-	"audio/mp4":     true,
-	"audio/aac":     true,
-	"audio/ogg":     true,
-	"audio/flac":    true,
-	"audio/opus":    true,
-	"audio/wav":     true,
-	
+	"audio/mpeg": true,
+	"audio/mp4":  true,
+	"audio/aac":  true,
+	"audio/ogg":  true,
+	"audio/flac": true,
+	"audio/opus": true,
+	"audio/wav":  true,
+
 	// Video (already compressed)
-	"video/mp4":         true,
-	"video/webm":        true,
-	"video/x-msvideo":   true,
-	"video/quicktime":   true,
-	"video/x-ms-wmv":    true,
-	"video/x-flv":       true,
-	"video/x-matroska":  true,
-	
+	"video/mp4":        true,
+	"video/webm":       true,
+	"video/x-msvideo":  true,
+	"video/quicktime":  true,
+	"video/x-ms-wmv":   true,
+	"video/x-flv":      true,
+	"video/x-matroska": true,
+
 	// Fonts (binary/already optimized)
-	"font/woff":                            true,
-	"font/woff2":                           true,
-	"font/ttf":                             true,
-	"font/otf":                             true,
-	"application/vnd.ms-fontobject":        true,
-	
+	"font/woff":                     true,
+	"font/woff2":                    true,
+	"font/ttf":                      true,
+	"font/otf":                      true,
+	"application/vnd.ms-fontobject": true,
+
 	// Archives (already compressed)
-	"application/zip":            true,
-	"application/gzip":           true,
-	"application/x-bzip2":        true,
-	"application/vnd.rar":        true,
+	"application/zip":             true,
+	"application/gzip":            true,
+	"application/x-bzip2":         true,
+	"application/vnd.rar":         true,
 	"application/x-7z-compressed": true,
-	"application/x-xz":           true,
-	"application/x-tar":          true,
-	
+	"application/x-xz":            true,
+	"application/x-tar":           true,
+
 	// Documents (binary/already optimized)
-	"application/pdf":                                                           true,
-	"application/msword":                                                        true,
-	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":  true,
-	"application/vnd.ms-excel":                                                  true,
-	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":        true,
+	"application/pdf":    true,
+	"application/msword": true,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
+	"application/vnd.ms-excel": true,
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":         true,
 	"application/vnd.ms-powerpoint":                                             true,
 	"application/vnd.openxmlformats-officedocument.presentationml.presentation": true,
 	"application/vnd.oasis.opendocument.text":                                   true,
 	"application/vnd.oasis.opendocument.spreadsheet":                            true,
 	"application/vnd.oasis.opendocument.presentation":                           true,
-	
+
 	// Other binary formats
 	"application/octet-stream": true,
 }
@@ -272,12 +272,12 @@ func shouldTemplate(mimetype []byte) bool {
 
 func shouldCompress(mimetype []byte) bool {
 	mimeStr := string(mimetype)
-	
+
 	// Check if explicitly marked as non-compressible
 	if nonCompressibleMimeTypes[mimeStr] {
 		return false
 	}
-	
+
 	// Check if explicitly marked as compressible
 	return compressibleMimeTypes[mimeStr]
 }
