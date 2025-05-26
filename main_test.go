@@ -308,11 +308,11 @@ func setupTestFiles(t testing.TB) string {
 
 	// Create test files
 	files := map[string]string{
-		"index.html":     `<html><body><h1>{{.Env.SITE_NAME}}</h1></body></html>`,
-		"style.css":      `body { font-family: Arial; }`,
-		"script.js":      `console.log("Hello from {{.Env.SITE_NAME}}");`,
-		"data.json":      `{"site": "{{.Env.SITE_NAME}}"}`,
-		"image.png":      "fake png data",
+		"index.html":      `<html><body><h1>{{.Env.SITE_NAME}}</h1></body></html>`,
+		"style.css":       `body { font-family: Arial; }`,
+		"script.js":       `console.log("Hello from {{.Env.SITE_NAME}}");`,
+		"data.json":       `{"site": "{{.Env.SITE_NAME}}"}`,
+		"image.png":       "fake png data",
 		"subdir/sub.html": `<html><body><h2>Subdirectory</h2></body></html>`,
 	}
 
@@ -342,7 +342,7 @@ func TestMakeRoute(t *testing.T) {
 	}()
 
 	publicDir := filepath.Join(tempDir, "public")
-	
+
 	tests := []struct {
 		name        string
 		path        string
@@ -624,7 +624,7 @@ func TestPopulateRoutes(t *testing.T) {
 
 	// Check specific routes
 	expectedRoutes := []string{"/", "/index.html", "/style.css", "/script.js", "/data.json", "/image.png", "/subdir/sub.html"}
-	
+
 	for _, path := range expectedRoutes {
 		route, exists := getRoute(path)
 		if !exists {
@@ -664,13 +664,12 @@ func BenchmarkHandler(b *testing.B) {
 
 	populateRoutes()
 
-	ctx := &fasthttp.RequestCtx{}
-	ctx.Request.SetRequestURI("/")
-	ctx.Request.Header.SetMethod("GET")
-	ctx.Request.Header.Set("Accept-Encoding", "gzip")
-
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
+		ctx := &fasthttp.RequestCtx{}
+		ctx.Request.SetRequestURI("/")
+		ctx.Request.Header.SetMethod("GET")
+		ctx.Request.Header.Set("Accept-Encoding", "gzip")
 		for pb.Next() {
 			ctx.Response.Reset()
 			handler(ctx)
@@ -680,7 +679,7 @@ func BenchmarkHandler(b *testing.B) {
 
 func BenchmarkGzipCompression(b *testing.B) {
 	data := []byte(strings.Repeat("Hello, World! This is a test string for compression. ", 100))
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = gzipData(data)
@@ -689,7 +688,7 @@ func BenchmarkGzipCompression(b *testing.B) {
 
 func BenchmarkBrotliCompression(b *testing.B) {
 	data := []byte(strings.Repeat("Hello, World! This is a test string for compression. ", 100))
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = brotliData(data)
