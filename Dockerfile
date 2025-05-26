@@ -46,7 +46,6 @@ ENV LOG_LEVEL=info
 ENV LOG_FORMAT=json
 ENV LOG_REQUESTS=true
 ENV CONFIG_PREFIX=VITE_
-ENV PUBLIC_DIR=public
 
 # Expose port
 EXPOSE $PORT
@@ -63,4 +62,4 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
 
 # Run the binary
-ENTRYPOINT ["/nano-web"]
+ENTRYPOINT ["/nano-web", "serve", "public"]
