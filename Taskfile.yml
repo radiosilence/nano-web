@@ -191,6 +191,16 @@ tasks:
     desc: "📋 Show current version from file"
     cmd: cat VERSION
 
+  publish:
+    desc: "📡 Publish module to Go proxy"
+    vars:
+      VERSION: "{{.VERSION}}"
+    cmd: GOPROXY=proxy.golang.org go list -m github.com/radiosilence/nano-web@v{{.VERSION}}
+
+  publish-current:
+    desc: "📡 Publish current version to Go proxy"
+    cmd: GOPROXY=proxy.golang.org go list -m github.com/radiosilence/nano-web@v{{.VERSION}}
+
   version:
     desc: "📋 Show version"
     cmd: echo "Version {{.VERSION}} Commit {{.COMMIT}} Built {{.BUILD_TIME}}"
@@ -235,7 +245,9 @@ tasks:
       - git push origin main
       - git push origin v{{.TAG_VERSION}}
       - echo "✅ Successfully created and pushed tag v{{.TAG_VERSION}}"
-      - echo "📦 Version {{.TAG_VERSION}} is now live!"
+      - echo "📡 Publishing to Go module proxy..."
+      - GOPROXY=proxy.golang.org go list -m github.com/radiosilence/nano-web@v{{.TAG_VERSION}}
+      - echo "📦 Version {{.TAG_VERSION}} is now live and published!"
 
   tag-local:
     desc: "🏷️ Create local git tag only (no push)"
