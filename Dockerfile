@@ -1,14 +1,66 @@
-FROM golang:latest as builder
-WORKDIR /app
-COPY main.go .
-COPY go.mod .
-COPY go.sum .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /serve
+# Build stage
+FROM golang:1.24-alpine AS builder
 
-FROM alpine:latest
-WORKDIR /
-COPY --from=builder /serve .
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Create appuser for security
+RUN adduser -D -g '' appuser
+
+# Set working directory
+WORKDIR /build
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY main.go ./
+
+# Build the binary with optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -o nano-web main.go
+
+# Runtime stage
+FROM scratch
+
+# Import from builder
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /etc/passwd /etc/passwd
+
+# Copy the binary
+COPY --from=builder /build/nano-web /nano-web
+
+# Use non-root user
+USER appuser
+
+# Set default environment variables
 ENV PORT=80
 ENV SPA_MODE=0
+ENV LOG_LEVEL=info
+ENV LOG_FORMAT=json
+ENV LOG_REQUESTS=true
+ENV CONFIG_PREFIX=VITE_
+ENV PUBLIC_DIR=public
+
+# Expose port
 EXPOSE $PORT
-CMD ["/serve"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/nano-web", "--health-check"] || exit 1
+
+# Set labels for better maintainability
+LABEL org.opencontainers.image.title="nano-web"
+LABEL org.opencontainers.image.description="Hyper-minimal, lightning-fast web server for SPAs and static content"
+LABEL org.opencontainers.image.vendor="nano-web"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
+
+# Run the binary
+ENTRYPOINT ["/nano-web"]

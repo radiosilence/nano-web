@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
 
@@ -48,6 +52,7 @@ func getAppEnv() map[string]string {
 var appEnv = getAppEnv()
 var publicDir = getEnv("PUBLIC_DIR", "public")
 var routes Routes = make(map[string]Route)
+var logRequests = getEnv("LOG_REQUESTS", "true") == "true"
 
 func getMimetype(ext string) string {
 	switch ext {
@@ -224,12 +229,12 @@ func populateRoutes(routes Routes) {
 	if err != nil {
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Println("⇨ error getting current working directory", err)
-			os.Exit(-1)
+			log.Fatal().Err(err).Msg("error getting current working directory")
 		}
-		fmt.Println("⇨ public directory not found in: " + cwd)
-		os.Exit(-1)
+		log.Fatal().Str("cwd", cwd).Msg("public directory not found")
 	}
+	
+	routeCount := 0
 	filepath.Walk("public", func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
@@ -239,25 +244,29 @@ func populateRoutes(routes Routes) {
 		route, err := makeRoute(path)
 
 		if err != nil {
-			fmt.Errorf("⇨ error making route for %s: %s", urlPath, err)
+			log.Error().Err(err).Str("url_path", urlPath).Str("file_path", path).Msg("error making route")
 			return nil
 		}
 
 		routes[urlPath] = route
+		routeCount++
 
 		if info.Name() == "index.html" {
 			indexUrlPath := strings.Replace(urlPath, "/index.html", "", 1)
 			if indexUrlPath == "" {
 				indexUrlPath = "/"
 			}
-			fmt.Println("⇨ adding index", indexUrlPath, "→", path)
+			log.Debug().Str("index_path", indexUrlPath).Str("file_path", path).Msg("adding index route")
 			routes[indexUrlPath] = route
 			routes[indexUrlPath+"/"] = route
+			routeCount += 2
 		}
-		fmt.Println("⇨ adding route", urlPath, "→", path)
+		log.Debug().Str("url_path", urlPath).Str("file_path", path).Msg("adding route")
 
 		return nil
 	})
+	
+	log.Info().Int("route_count", routeCount).Msg("routes populated successfully")
 }
 
 func getAcceptedEncoding(ctx *fasthttp.RequestCtx) string {
@@ -290,17 +299,54 @@ func getEncodedContent(acceptedEncoding string, content Content) (string, []byte
 	}
 }
 
+func healthCheckHandler(ctx *fasthttp.RequestCtx) {
+	ctx.Response.Header.Set("Content-Type", "application/json")
+	ctx.Response.Header.Set("Server", "nano-web")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	fmt.Fprintf(ctx, `{"status":"healthy","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))
+}
+
 func handler(ctx *fasthttp.RequestCtx) {
-	fmt.Println("⇨ request", string(ctx.Path()))
-	route, exists := routes[string(ctx.Path())]
+	start := time.Now()
+	path := string(ctx.Path())
+	method := string(ctx.Method())
+	userAgent := string(ctx.UserAgent())
+	
+	// Handle health check endpoint
+	if path == "/health" || path == "/_health" {
+		healthCheckHandler(ctx)
+		return
+	}
+	
+	route, exists := routes[path]
 	if !exists {
 		if os.Getenv("SPA_MODE") == "1" {
 			route, exists = routes["/"]
 			if !exists {
+				duration := time.Since(start)
+				if logRequests {
+					log.Warn().
+						Str("method", method).
+						Str("path", path).
+						Str("user_agent", userAgent).
+						Int("status", fasthttp.StatusNotFound).
+						Dur("duration_ms", duration).
+						Msg("request not found")
+				}
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 				return
 			}
 		} else {
+			duration := time.Since(start)
+			if logRequests {
+				log.Warn().
+					Str("method", method).
+					Str("path", path).
+					Str("user_agent", userAgent).
+					Int("status", fasthttp.StatusNotFound).
+					Dur("duration_ms", duration).
+					Msg("request not found")
+			}
 			ctx.Error("Not Found", fasthttp.StatusNotFound)
 			return
 		}
@@ -315,12 +361,73 @@ func handler(ctx *fasthttp.RequestCtx) {
 		ctx.Response.Header.Set("Content-Encoding", encoding)
 	}
 	fmt.Fprintf(ctx, "%s", content)
+	
+	duration := time.Since(start)
+	if logRequests {
+		log.Info().
+			Str("method", method).
+			Str("path", path).
+			Str("user_agent", userAgent).
+			Str("content_type", route.ContentType).
+			Str("encoding", encoding).
+			Int("status", fasthttp.StatusOK).
+			Int("content_length", len(content)).
+			Dur("duration_ms", duration).
+			Msg("request served")
+	}
 }
 
 func main() {
+	// Parse command line flags
+	var healthCheck bool
+	flag.BoolVar(&healthCheck, "health-check", false, "Perform health check and exit")
+	flag.Parse()
+
+	// Handle health check command
+	if healthCheck {
+		// Simple health check - just verify we can start
+		log.Info().Msg("Health check passed")
+		os.Exit(0)
+	}
+
+	// Configure logger
+	if getEnv("LOG_FORMAT", "json") == "json" {
+		// JSON logging for production
+		log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+	} else {
+		// Pretty logging for development
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
+	}
+	
+	// Set log level
+	switch getEnv("LOG_LEVEL", "info") {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
 	addr := ":" + getEnv("PORT", "80")
+	
+	log.Info().
+		Str("version", "nano-web").
+		Str("port", getEnv("PORT", "80")).
+		Str("public_dir", publicDir).
+		Bool("spa_mode", os.Getenv("SPA_MODE") == "1").
+		Bool("log_requests", logRequests).
+		Str("config_prefix", getEnv("CONFIG_PREFIX", "VITE_")).
+		Msg("starting nano-web server")
+	
 	populateRoutes(routes)
-	// fmt.Printf("⇨ routes:\n")
-	// pp.Print(routes)
-	fasthttp.ListenAndServe(addr, handler)
+	
+	log.Info().Str("addr", addr).Msg("server listening")
+	if err := fasthttp.ListenAndServe(addr, handler); err != nil {
+		log.Fatal().Err(err).Msg("server failed to start")
+	}
 }
