@@ -102,7 +102,7 @@ func (h *HealthCheckCmd) Run() error {
 type VersionCmd struct{}
 
 func (v *VersionCmd) Run() error {
-	fmt.Println("nano-web v1.0.0")
+	fmt.Println(FullVersion())
 	fmt.Println("Ultra-fast static file server built with Go")
 	fmt.Println("Repository: https://github.com/radiosilence/nano-web")
 	return nil
@@ -139,7 +139,7 @@ func (s *ServeCmd) Run() error {
 	addr := fmt.Sprintf(":%d", s.Port)
 
 	log.Info().
-		Str("version", "nano-web v1.0.0").
+		Str("version", FullVersion()).
 		Int("port", s.Port).
 		Str("public_dir", s.PublicDir).
 		Bool("spa_mode", s.SpaMode).
@@ -568,7 +568,7 @@ func main() {
 			Summary: true,
 		}),
 		kong.Vars{
-			"version": "0.3.3",
+			"version": Version(),
 		},
 	)
 

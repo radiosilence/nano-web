@@ -9,7 +9,7 @@ env:
 
 vars:
   VERSION:
-    sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/v//' || echo "dev"
+    sh: cat VERSION 2>/dev/null || echo "dev"
   COMMIT:
     sh: git rev-parse --short HEAD
   BUILD_TIME:
@@ -30,7 +30,7 @@ tasks:
 
   run:
     desc: "🏃 Run with go run"
-    cmd: go run main.go serve --port 8080 --log-format console --log-level debug
+    cmd: go run . serve --port 8080 --log-format console --log-level debug
 
   build:
     desc: "🏗️ Build binary"
@@ -40,19 +40,19 @@ tasks:
       - "go.sum"
     generates:
       - "{{.PKGNAME}}"
-    cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.PKGNAME}} main.go
+    cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.PKGNAME}} .
 
   build-all:
     desc: "🌍 Build for all platforms"
     deps: [clean-dist]
     cmds:
       - mkdir -p dist
-      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-amd64 main.go
-      - GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-arm64 main.go
-      - GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-amd64 main.go
-      - GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-arm64 main.go
-      - GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-windows-amd64.exe main.go
-      - GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-freebsd-amd64 main.go
+      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-amd64 .
+      - GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-arm64 .
+      - GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-amd64 .
+      - GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-arm64 .
+      - GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-windows-amd64.exe .
+      - GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-freebsd-amd64 .
 
   test:
     desc: "🧪 Run tests"
@@ -143,7 +143,7 @@ tasks:
       GOARCH: "{{.PKGARCH}}"
     cmd: |
       mkdir -p {{.PKGDIR}}
-      go build -ldflags="{{.LDFLAGS}}" -o {{.PKGDIR}}/{{.PKGNAME}} main.go
+      go build -ldflags="{{.LDFLAGS}}" -o {{.PKGDIR}}/{{.PKGNAME}} .
 
   pkg-create:
     desc: "📁 Create OPS package structure"
@@ -187,6 +187,10 @@ tasks:
     deps: [build]
     cmd: ./{{.PKGNAME}} health-check
 
+  current-version:
+    desc: "📋 Show current version from file"
+    cmd: cat VERSION
+
   version:
     desc: "📋 Show version"
     cmd: echo "Version {{.VERSION}} Commit {{.COMMIT}} Built {{.BUILD_TIME}}"
@@ -201,17 +205,54 @@ tasks:
       - go version
       - echo "Platform {{OS}}/{{ARCH}}"
 
+  version-bump:
+    desc: "📝 Update version in VERSION file"
+    vars:
+      NEW_VERSION: "{{.CLI_ARGS}}"
+    preconditions:
+      - sh: '[ -n "{{.NEW_VERSION}}" ]'
+        msg: "Please provide a version: task version-bump -- 1.0.1"
+    cmds:
+      - echo "{{.NEW_VERSION}}" > VERSION
+      - echo "Updated VERSION file to {{.NEW_VERSION}}"
+
   tag:
-    desc: "🏷️ Create git tag"
+    desc: "🏷️ Create git tag and push (auto-updates version)"
     vars:
       TAG: "{{.CLI_ARGS}}"
+      TAG_VERSION:
+        sh: echo "{{.CLI_ARGS}}" | sed 's/^v//'
     preconditions:
       - sh: '[ -n "{{.TAG}}" ]'
-        msg: "Please provide a tag: task tag -- v1.0.0"
+        msg: "Please provide a tag: task tag -- v1.0.1 or task tag -- 1.0.1"
+      - sh: 'git diff --quiet'
+        msg: "Working directory must be clean before tagging"
     cmds:
-      - git tag -a {{.TAG}} -m "Release {{.TAG}}"
-      - echo "Created tag {{.TAG}}"
-      - echo "Push with git push origin {{.TAG}}"
+      - echo "{{.TAG_VERSION}}" > VERSION
+      - git add VERSION
+      - git commit -m "Bump version to {{.TAG_VERSION}}"
+      - git tag -a v{{.TAG_VERSION}} -m "Release v{{.TAG_VERSION}}"
+      - git push origin main
+      - git push origin v{{.TAG_VERSION}}
+      - echo "✅ Successfully created and pushed tag v{{.TAG_VERSION}}"
+      - echo "📦 Version {{.TAG_VERSION}} is now live!"
+
+  tag-local:
+    desc: "🏷️ Create local git tag only (no push)"
+    vars:
+      TAG: "{{.CLI_ARGS}}"
+      TAG_VERSION:
+        sh: echo "{{.CLI_ARGS}}" | sed 's/^v//'
+    preconditions:
+      - sh: '[ -n "{{.TAG}}" ]'
+        msg: "Please provide a tag: task tag-local -- v1.0.1"
+    cmds:
+      - echo "{{.TAG_VERSION}}" > VERSION
+      - git add VERSION
+      - git commit -m "Bump version to {{.TAG_VERSION}}"
+      - git tag -a v{{.TAG_VERSION}} -m "Release v{{.TAG_VERSION}}"
+      - echo "Created local tag v{{.TAG_VERSION}}"
+      - echo "Push with git push origin main and git push origin v{{.TAG_VERSION}}"
 
   ci:
     desc: "🤖 Run CI pipeline"
