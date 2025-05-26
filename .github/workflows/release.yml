@@ -20,15 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up Go
+      - name: 🐹 Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.23'
           
-      - name: Run tests
+      - name: 🧪 Run tests
         run: go test -v ./...
         
-      - name: Run benchmarks
+      - name: 🔥 Run benchmarks
         run: go test -bench=. -benchmem ./...
 
   build:
@@ -66,12 +66,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up Go
+      - name: 🐹 Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.23'
           
-      - name: Get version
+      - name: 📋 Get version
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -80,7 +80,7 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
           
-      - name: Build binary
+      - name: 🏗️ Build binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -89,17 +89,17 @@ jobs:
           go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
             -o nano-web-${{ matrix.name }}${{ matrix.ext }} main.go
             
-      - name: Create tarball (Unix)
+      - name: 📦 Create tarball (Unix)
         if: matrix.goos != 'windows'
         run: |
           tar -czf nano-web-${{ matrix.name }}.tar.gz nano-web-${{ matrix.name }}
           
-      - name: Create zip (Windows)
+      - name: 📦 Create zip (Windows)
         if: matrix.goos == 'windows'
         run: |
           zip nano-web-${{ matrix.name }}.zip nano-web-${{ matrix.name }}${{ matrix.ext }}
           
-      - name: Upload artifacts
+      - name: ⬆️ Upload artifacts
         uses: actions/upload-artifact@v3
         with:
           name: nano-web-${{ matrix.name }}
@@ -114,7 +114,7 @@ jobs:
         with:
           fetch-depth: 0
           
-      - name: Get version
+      - name: 📋 Get version
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -123,12 +123,12 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
           
-      - name: Download all artifacts
+      - name: ⬇️ Download all artifacts
         uses: actions/download-artifact@v3
         with:
           path: ./artifacts
           
-      - name: Move artifacts to release directory
+      - name: 📁 Move artifacts to release directory
         run: |
           mkdir -p release
           find ./artifacts -name "nano-web-*" -type f | while read file; do
@@ -136,7 +136,7 @@ jobs:
           done
           ls -la release/
           
-      - name: Generate changelog
+      - name: 📝 Generate changelog
         id: changelog
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -155,13 +155,13 @@ jobs:
             echo "EOF" >> $GITHUB_OUTPUT
           fi
           
-      - name: Create checksums
+      - name: 🔐 Create checksums
         run: |
           cd release
           sha256sum * > checksums.txt
           cat checksums.txt
           
-      - name: Create Release
+      - name: 🚀 Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.version }}
