@@ -565,15 +565,12 @@ func main() {
 
 	ctx := kong.Parse(cli,
 		kong.Name("nano-web"),
-		kong.Description("🚀 Ultra-fast static file server for SPAs and static content\n\nBuilt on FastHTTP, nano-web is designed for maximum performance and minimal resource usage.\nPerfect for containerized deployments, edge computing, and unikernel environments."),
+		kong.Description("🔥 Ultra-fast static file server for SPAs and static content"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,
 			Summary: true,
 		}),
-		kong.Vars{
-			"version": "1.0.0",
-		},
 	)
 
 	err := ctx.Run()
