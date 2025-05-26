@@ -27,6 +27,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+      - name: Set up Task
+        uses: arduino/setup-task@v1
+        with:
+          version: 3.x
       - name: Set up OPS
         run: |
           curl https://ops.city/get.sh -sSfL | sh
@@ -39,5 +43,5 @@ jobs:
           ops pkg login ${{ secrets.OPS_KEY }}
       - name: Push
         run: |
-          echo "Version: $(./scripts/get-version.sh)"
-          make pkg-push PKGARCH=${{ inputs.arch }}
+          echo "Version: $(cat VERSION)"
+          PKGARCH=${{ inputs.arch }} task pkg-push

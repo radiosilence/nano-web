@@ -1,8 +1,9 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies and Task
+RUN apk add --no-cache git ca-certificates tzdata curl
+RUN curl -sSL https://taskfile.dev/install.sh | sh -s -- -d /usr/local/bin
 
 # Create appuser for security
 RUN adduser -D -g '' appuser
@@ -10,20 +11,20 @@ RUN adduser -D -g '' appuser
 # Set working directory
 WORKDIR /build
 
-# Copy go mod files first for better caching
-COPY go.mod go.sum ./
+# Copy go mod files and Taskfile first for better caching
+COPY go.mod go.sum Taskfile.yml ./
 
-# Download dependencies
-RUN go mod download && go mod verify
+# Download dependencies using Task
+RUN task deps
 
 # Copy source code and VERSION file
 COPY *.go VERSION ./
 
-# Build the binary with optimizations
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags='-w -s -extldflags "-static"' \
-    -a -installsuffix cgo \
-    -o nano-web .
+# Build the binary using Task
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
+RUN task build
 
 # Runtime stage
 FROM scratch
