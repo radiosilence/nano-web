@@ -233,7 +233,7 @@ func populateRoutes(routes Routes) {
 		}
 		log.Fatal().Str("cwd", cwd).Msg("public directory not found")
 	}
-	
+
 	routeCount := 0
 	filepath.Walk("public", func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
@@ -265,7 +265,7 @@ func populateRoutes(routes Routes) {
 
 		return nil
 	})
-	
+
 	log.Info().Int("route_count", routeCount).Msg("routes populated successfully")
 }
 
@@ -311,13 +311,13 @@ func handler(ctx *fasthttp.RequestCtx) {
 	path := string(ctx.Path())
 	method := string(ctx.Method())
 	userAgent := string(ctx.UserAgent())
-	
+
 	// Handle health check endpoint
 	if path == "/health" || path == "/_health" {
 		healthCheckHandler(ctx)
 		return
 	}
-	
+
 	route, exists := routes[path]
 	if !exists {
 		if os.Getenv("SPA_MODE") == "1" {
@@ -361,7 +361,7 @@ func handler(ctx *fasthttp.RequestCtx) {
 		ctx.Response.Header.Set("Content-Encoding", encoding)
 	}
 	fmt.Fprintf(ctx, "%s", content)
-	
+
 	duration := time.Since(start)
 	if logRequests {
 		log.Info().
@@ -398,7 +398,7 @@ func main() {
 		// Pretty logging for development
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
 	}
-	
+
 	// Set log level
 	switch getEnv("LOG_LEVEL", "info") {
 	case "debug":
@@ -414,7 +414,7 @@ func main() {
 	}
 
 	addr := ":" + getEnv("PORT", "80")
-	
+
 	log.Info().
 		Str("version", "nano-web").
 		Str("port", getEnv("PORT", "80")).
@@ -423,9 +423,9 @@ func main() {
 		Bool("log_requests", logRequests).
 		Str("config_prefix", getEnv("CONFIG_PREFIX", "VITE_")).
 		Msg("starting nano-web server")
-	
+
 	populateRoutes(routes)
-	
+
 	log.Info().Str("addr", addr).Msg("server listening")
 	if err := fasthttp.ListenAndServe(addr, handler); err != nil {
 		log.Fatal().Err(err).Msg("server failed to start")
