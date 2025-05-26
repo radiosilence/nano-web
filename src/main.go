@@ -60,7 +60,7 @@ func (s *ServeCmd) Run() error {
 
 	// Start server
 	addr := ":" + strconv.Itoa(s.Port)
-	return startServer(addr, s.LogRequests)
+	return startServer(addr, s)
 }
 
 func getAppEnv(prefix string) map[string]string {
