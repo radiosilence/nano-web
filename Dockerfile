@@ -20,7 +20,7 @@ COPY .git go.mod go.sum Taskfile.yml ./
 RUN task deps
 
 # Copy source code and VERSION file
-COPY src/*.go ./src/
+COPY *.go .
 COPY VERSION ./
 
 # Build the binary using Task
