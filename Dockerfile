@@ -3,7 +3,9 @@ FROM golang:1.24-alpine AS builder
 
 # Install build dependencies and Task
 RUN apk add --no-cache git ca-certificates tzdata curl
-RUN curl -sSL https://taskfile.dev/install.sh | sh -s -- -d /usr/local/bin
+
+# Install task
+RUN go install github.com/go-task/task/v3/cmd/task@latest
 
 # Create appuser for security
 RUN adduser -D -g '' appuser
@@ -12,7 +14,7 @@ RUN adduser -D -g '' appuser
 WORKDIR /build
 
 # Copy go mod files and Taskfile first for better caching
-COPY go.mod go.sum Taskfile.yml ./
+COPY .git go.mod go.sum Taskfile.yml ./
 
 # Download dependencies using Task
 RUN task deps
