@@ -427,6 +427,11 @@ func populateRoutes(publicDir string) {
 		publicDir = publicDir[:len(publicDir)-1]
 	}
 
+	// Remove leading ./ if present
+	if strings.HasPrefix(publicDir, "./") {
+		publicDir = publicDir[2:]
+	}
+
 	_, err := os.Stat(publicDir)
 	if err != nil {
 		cwd, _ := os.Getwd()
