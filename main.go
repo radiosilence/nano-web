@@ -272,14 +272,14 @@ func templateRoute(name string, content []byte) ([]byte, error) {
 }
 
 func shouldTemplate(mimetype []byte) bool {
+	return bytes.Equal(mimetype, []byte("text/html"))
+}
+
+func shouldCompress(mimetype []byte) bool {
 	return bytes.Equal(mimetype, []byte("text/html")) ||
 		bytes.Equal(mimetype, []byte("text/css")) ||
 		bytes.Equal(mimetype, []byte("text/javascript")) ||
 		bytes.Equal(mimetype, []byte("application/json"))
-}
-
-func shouldCompress(mimetype []byte) bool {
-	return shouldTemplate(mimetype)
 }
 
 func gzipData(dat []byte) []byte {
