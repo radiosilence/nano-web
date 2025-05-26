@@ -195,7 +195,7 @@ tasks:
 
   current-version:
     desc: "📋 Show current version from file"
-    cmd: cat ./src/VERSION
+    cmd: cat VERSION
 
   publish:
     desc: "📡 Publish module to Go proxy"
@@ -229,7 +229,7 @@ tasks:
       - sh: '[ -n "{{.NEW_VERSION}}" ]'
         msg: "Please provide a version: task version-bump -- 1.0.1"
     cmds:
-      - echo "{{.NEW_VERSION}}" > ./src/VERSION
+      - echo "{{.NEW_VERSION}}" > VERSION
       - echo "Updated VERSION file to {{.NEW_VERSION}}"
 
   tag:
