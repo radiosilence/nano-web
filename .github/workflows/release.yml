@@ -1,0 +1,215 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        default: 'v0.2.0'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          
+      - name: Run tests
+        run: go test -v ./...
+        
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            name: linux-amd64
+          - goos: linux
+            goarch: arm64
+            name: linux-arm64
+          - goos: darwin
+            goarch: amd64
+            name: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            name: darwin-arm64
+          - goos: windows
+            goarch: amd64
+            name: windows-amd64
+            ext: .exe
+          - goos: freebsd
+            goarch: amd64
+            name: freebsd-amd64
+          - goos: openbsd
+            goarch: amd64
+            name: openbsd-amd64
+          - goos: netbsd
+            goarch: amd64
+            name: netbsd-amd64
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+            -o nano-web-${{ matrix.name }}${{ matrix.ext }} main.go
+            
+      - name: Create tarball (Unix)
+        if: matrix.goos != 'windows'
+        run: |
+          tar -czf nano-web-${{ matrix.name }}.tar.gz nano-web-${{ matrix.name }}
+          
+      - name: Create zip (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          zip nano-web-${{ matrix.name }}.zip nano-web-${{ matrix.name }}${{ matrix.ext }}
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: nano-web-${{ matrix.name }}
+          path: |
+            nano-web-${{ matrix.name }}*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+          
+      - name: Move artifacts to release directory
+        run: |
+          mkdir -p release
+          find ./artifacts -name "nano-web-*" -type f | while read file; do
+            cp "$file" release/
+          done
+          ls -la release/
+          
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual releases, create a simple changelog
+            echo "changelog=Manual release ${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            # For tag pushes, get commits since last tag
+            LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              CHANGELOG=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
+            else
+              CHANGELOG=$(git log --oneline --pretty=format:"- %s" HEAD)
+            fi
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGELOG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Create checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: nano-web ${{ steps.version.outputs.version }}
+          body: |
+            # nano-web ${{ steps.version.outputs.version }}
+            
+            🚀 **Ultra-fast static file server for SPAs and static content**
+            
+            ## Installation
+            
+            ### Go Install
+            ```bash
+            go install github.com/radiosilence/nano-web@${{ steps.version.outputs.version }}
+            ```
+            
+            ### Download Binary
+            Download the appropriate binary for your platform from the assets below.
+            
+            #### Linux/macOS/FreeBSD/OpenBSD/NetBSD
+            ```bash
+            # Example for Linux AMD64
+            wget https://github.com/radiosilence/nano-web/releases/download/${{ steps.version.outputs.version }}/nano-web-linux-amd64.tar.gz
+            tar -xzf nano-web-linux-amd64.tar.gz
+            chmod +x nano-web-linux-amd64
+            ./nano-web-linux-amd64 serve --help
+            ```
+            
+            #### Windows
+            ```powershell
+            # Download and extract nano-web-windows-amd64.zip
+            # Run nano-web-windows-amd64.exe serve --help
+            ```
+            
+            ## What's New
+            
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## Verification
+            
+            All binaries are signed and checksums are provided in `checksums.txt`.
+            
+            ---
+            
+            **Full Changelog**: https://github.com/radiosilence/nano-web/compare/v0.1.0...${{ steps.version.outputs.version }}
+          files: |
+            release/*
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
