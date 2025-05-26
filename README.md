@@ -4,14 +4,14 @@
 
 > ⚡ **Hyper-minimal, lightning-fast web server for SPAs and static content**
 
-Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal resource usage. Perfect for containerized deployments, edge computing, and unikernel environments.
+Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal resource usage. Perfect for containerized deployments and unikernel environments.
 
 ## ✨ What makes nano-web different
 
 - 🔧 **Runtime environment injection** - Safely inject environment variables into static files at runtime, perfect for dynamic API endpoints and configuration without rebuilding
 - 🚄 **Ridiculously fast** - Pre-caches everything in memory with smart compression, serves 100k+ requests/second with sub-millisecond latency
-- 📦 **Tiny footprint** - Single binary, minimal Docker images, perfect for edge computing and unikernels
-- 🎯 **SPA-mode** - A feature built specifically for modern single-page applications with intelligent fallback routing
+- 📦 **Tiny footprint** - Tiny (<20MB) Docker image
+- 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing
 
 ## 🚀 Quick Start
 
@@ -148,6 +148,7 @@ All configuration is done via environment variables:
 ## 🐳 Docker Examples
 
 ### Simple Static Site
+
 ### Docker
 
 ```dockerfile
@@ -280,6 +281,7 @@ docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
 ```
 
 **⚠️ Public config only** - don't put secrets here.
+
 ### Development Setup
 
 ```bash
