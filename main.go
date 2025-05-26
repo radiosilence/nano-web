@@ -355,10 +355,6 @@ func makeRoute(path string) (*Route, error) {
 	}, nil
 }
 func populateRoutes(publicDir string) {
-	// Sanitize publicDir by removing ./ prefix if present
-	if strings.HasPrefix(publicDir, "./") {
-		publicDir = publicDir[2:]
-	}
 	// Remove trailing slash if present
 	if strings.HasSuffix(publicDir, "/") {
 		publicDir = publicDir[:len(publicDir)-1]
