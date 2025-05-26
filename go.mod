@@ -5,6 +5,7 @@ go 1.23.4
 toolchain go1.24.3
 
 require (
+	github.com/alecthomas/kong v1.11.0
 	github.com/andybalholm/brotli v1.1.1
 	github.com/rs/zerolog v1.34.0
 	github.com/valyala/fasthttp v1.62.0

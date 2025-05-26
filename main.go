@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/alecthomas/kong"
 	"github.com/andybalholm/brotli"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -42,11 +42,8 @@ type Routes struct {
 }
 
 var (
-	appEnv       map[string]string
-	publicDir    string
-	routes       *Routes
-	logRequests  bool
-	spaMode      bool
+	appEnv map[string]string
+	routes *Routes
 	
 	// Pre-allocated byte slices for common strings
 	healthPath      = []byte("/health")
@@ -72,26 +69,116 @@ var (
 	}
 )
 
-func init() {
-	appEnv = getAppEnv()
-	publicDir = getEnv("PUBLIC_DIR", "public")
-	logRequests = getEnv("LOG_REQUESTS", "true") == "true"
-	spaMode = os.Getenv("SPA_MODE") == "1"
+// CLI structure defining all commands and flags
+type CLI struct {
+	// Commands
+	Serve       ServeCmd       `cmd:"" help:"Start the web server"`
+	HealthCheck HealthCheckCmd `cmd:"" help:"Perform health check and exit"`
+	Version     VersionCmd     `cmd:"" help:"Show version information"`
+}
+
+type ServeCmd struct {
+	// Positional argument for the directory to serve
+	PublicDir string `arg:"" optional:"" help:"Directory containing static files to serve" default:"public"`
+	
+	// Server configuration
+	Port         int    `short:"p" long:"port" help:"Port to listen on" default:"80" env:"PORT"`
+	SpaMode      bool   `short:"s" long:"spa-mode" help:"Enable SPA mode (serve index.html for 404s)" env:"SPA_MODE"`
+	ConfigPrefix string `long:"config-prefix" help:"Prefix for runtime environment variable injection" default:"VITE_" env:"CONFIG_PREFIX"`
+	
+	// Logging configuration
+	LogLevel    string `long:"log-level" help:"Logging level" enum:"debug,info,warn,error" default:"info" env:"LOG_LEVEL"`
+	LogFormat   string `long:"log-format" help:"Log format" enum:"json,console" default:"json" env:"LOG_FORMAT"`
+	LogRequests bool   `long:"log-requests" help:"Enable request logging" default:"true" env:"LOG_REQUESTS"`
+}
+
+type HealthCheckCmd struct{}
+
+func (h *HealthCheckCmd) Run() error {
+	fmt.Println(`{"status":"healthy","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `"}`)
+	return nil
+}
+
+type VersionCmd struct{}
+
+func (v *VersionCmd) Run() error {
+	fmt.Println("nano-web v1.0.0")
+	fmt.Println("Ultra-fast static file server built with Go")
+	fmt.Println("Repository: https://github.com/radiosilence/nano-web")
+	return nil
+}
+
+func (s *ServeCmd) Run() error {
+	// Initialize global variables from CLI options
+	appEnv = getAppEnv(s.ConfigPrefix)
 	routes = &Routes{
 		m: make(map[string]*Route),
 	}
-}
 
-func getEnv(name string, fallback string) string {
-	value, exists := os.LookupEnv(name)
-	if !exists {
-		value = fallback
+	// Configure logger
+	if s.LogFormat == "json" {
+		log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+	} else {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
 	}
-	return value
+
+	// Set log level
+	switch s.LogLevel {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
+	addr := fmt.Sprintf(":%d", s.Port)
+
+	log.Info().
+		Str("version", "nano-web v1.0.0").
+		Int("port", s.Port).
+		Str("public_dir", s.PublicDir).
+		Bool("spa_mode", s.SpaMode).
+		Bool("log_requests", s.LogRequests).
+		Str("config_prefix", s.ConfigPrefix).
+		Msg("starting nano-web server")
+
+	populateRoutes(s.PublicDir)
+	
+	// Configure server for maximum performance
+	server := &fasthttp.Server{
+		Handler:                       func(ctx *fasthttp.RequestCtx) { handler(ctx, s) },
+		Name:                         "nano-web",
+		ReadBufferSize:               16 * 1024, // 16KB
+		WriteBufferSize:              16 * 1024, // 16KB
+		MaxConnsPerIP:                1000,
+		MaxRequestsPerConn:           1000,
+		MaxRequestBodySize:           1 * 1024 * 1024, // 1MB
+		DisableKeepalive:             false,
+		TCPKeepalive:                 true,
+		TCPKeepalivePeriod:           30 * time.Second,
+		ReduceMemoryUsage:            false, // Keep false for performance
+		GetOnly:                      true,  // Only serve GET requests
+		DisablePreParseMultipartForm: true,
+		LogAllErrors:                 false,
+		DisableHeaderNamesNormalizing: true, // Performance optimization
+		NoDefaultServerHeader:        true,
+		StreamRequestBody:            false,
+	}
+
+	log.Info().Str("addr", addr).Msg("server listening")
+	if err := server.ListenAndServe(addr); err != nil {
+		log.Fatal().Err(err).Msg("server failed to start")
+	}
+	
+	return nil
 }
 
-func getAppEnv() map[string]string {
-	prefix := getEnv("CONFIG_PREFIX", "VITE_")
+func getAppEnv(prefix string) map[string]string {
 	appEnv := make(map[string]string)
 	for _, env := range os.Environ() {
 		if idx := strings.IndexByte(env, '='); idx > 0 {
@@ -268,11 +355,11 @@ func makeRoute(path string) (*Route, error) {
 	}, nil
 }
 
-func populateRoutes() {
+func populateRoutes(publicDir string) {
 	_, err := os.Stat(publicDir)
 	if err != nil {
 		cwd, _ := os.Getwd()
-		log.Fatal().Str("cwd", cwd).Msg("public directory not found")
+		log.Fatal().Str("cwd", cwd).Str("public_dir", publicDir).Msg("public directory not found")
 	}
 
 	routeCount := 0
@@ -342,7 +429,7 @@ func healthCheckHandler(ctx *fasthttp.RequestCtx) {
 		atomic.LoadUint64(&errorCount))
 }
 
-func handler(ctx *fasthttp.RequestCtx) {
+func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
 	atomic.AddUint64(&requestCount, 1)
 	
 	start := time.Now()
@@ -358,12 +445,12 @@ func handler(ctx *fasthttp.RequestCtx) {
 	route, exists := getRoute(pathStr)
 	
 	if !exists {
-		if spaMode {
+		if s.SpaMode {
 			route, exists = getRoute("/")
 			if !exists {
 				atomic.AddUint64(&errorCount, 1)
 				duration := time.Since(start)
-				if logRequests {
+				if s.LogRequests {
 					log.Warn().
 						Str("method", string(ctx.Method())).
 						Str("path", pathStr).
@@ -379,7 +466,7 @@ func handler(ctx *fasthttp.RequestCtx) {
 		} else {
 			atomic.AddUint64(&errorCount, 1)
 			duration := time.Since(start)
-			if logRequests {
+			if s.LogRequests {
 				log.Warn().
 					Str("method", string(ctx.Method())).
 					Str("path", pathStr).
@@ -430,7 +517,7 @@ func handler(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.Response.SetBody(content)
 
-	if logRequests {
+	if s.LogRequests {
 		duration := time.Since(start)
 		log.Info().
 			Str("method", string(ctx.Method())).
@@ -446,72 +533,21 @@ func handler(ctx *fasthttp.RequestCtx) {
 }
 
 func main() {
-	var healthCheck bool
-	flag.BoolVar(&healthCheck, "health-check", false, "Perform health check and exit")
-	flag.Parse()
-
-	if healthCheck {
-		log.Info().Msg("Health check passed")
-		os.Exit(0)
-	}
-
-	// Configure logger
-	if getEnv("LOG_FORMAT", "json") == "json" {
-		log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
-	} else {
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
-	}
-
-	// Set log level
-	switch getEnv("LOG_LEVEL", "info") {
-	case "debug":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case "info":
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case "warn":
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case "error":
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	default:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	}
-
-	addr := ":" + getEnv("PORT", "80")
-
-	log.Info().
-		Str("version", "nano-web").
-		Str("port", getEnv("PORT", "80")).
-		Str("public_dir", publicDir).
-		Bool("spa_mode", spaMode).
-		Bool("log_requests", logRequests).
-		Str("config_prefix", getEnv("CONFIG_PREFIX", "VITE_")).
-		Msg("starting nano-web server")
-
-	populateRoutes()
+	cli := &CLI{}
 	
-	// Configure server for maximum performance
-	server := &fasthttp.Server{
-		Handler:                       handler,
-		Name:                         "nano-web",
-		ReadBufferSize:               16 * 1024, // 16KB
-		WriteBufferSize:              16 * 1024, // 16KB
-		MaxConnsPerIP:                1000,
-		MaxRequestsPerConn:           1000,
-		MaxRequestBodySize:           1 * 1024 * 1024, // 1MB
-		DisableKeepalive:             false,
-		TCPKeepalive:                 true,
-		TCPKeepalivePeriod:           30 * time.Second,
-		ReduceMemoryUsage:            false, // Keep false for performance
-		GetOnly:                      true,  // Only serve GET requests
-		DisablePreParseMultipartForm: true,
-		LogAllErrors:                 false,
-		DisableHeaderNamesNormalizing: true, // Performance optimization
-		NoDefaultServerHeader:        true,
-		StreamRequestBody:            false,
-	}
-
-	log.Info().Str("addr", addr).Msg("server listening")
-	if err := server.ListenAndServe(addr); err != nil {
-		log.Fatal().Err(err).Msg("server failed to start")
-	}
+	ctx := kong.Parse(cli,
+		kong.Name("nano-web"),
+		kong.Description("🚀 Ultra-fast static file server for SPAs and static content\n\nBuilt on FastHTTP, nano-web is designed for maximum performance and minimal resource usage.\nPerfect for containerized deployments, edge computing, and unikernel environments."),
+		kong.UsageOnError(),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact: true,
+			Summary: true,
+		}),
+		kong.Vars{
+			"version": "1.0.0",
+		},
+	)
+	
+	err := ctx.Run()
+	ctx.FatalIfErrorf(err)
 }
