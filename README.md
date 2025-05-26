@@ -6,16 +6,12 @@
 
 Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal resource usage. Perfect for containerized deployments, edge computing, and unikernel environments.
 
-## ✨ Features
+## ✨ What makes nano-web different
 
-- 🚄 **Ultra-fast**: Built on FastHTTP for maximum performance
-- 💾 **Memory-optimized**: Pre-caches and compresses all resources at startup
-- 🗜️ **Smart compression**: Automatic Brotli and Gzip compression
-- 🎯 **SPA-ready**: Built-in support for Single Page Applications
-- 🔧 **Runtime templating**: Environment variable injection for dynamic configuration
-- 📦 **Container-first**: Optimized for Docker and unikernel deployments
-- 📊 **Structured logging**: JSON logging with configurable levels
-- 🎨 **Zero-config**: Works out of the box with sensible defaults
+- 🔧 **Runtime environment injection** - Safely inject environment variables into static files at runtime, perfect for dynamic API endpoints and configuration without rebuilding
+- 🚄 **Ridiculously fast** - Pre-caches everything in memory with smart compression, serves 100k+ requests/second with sub-millisecond latency
+- 📦 **Tiny footprint** - Single binary, minimal Docker images, perfect for edge computing and unikernels
+- 🎯 **SPA-mode** - A feature built specifically for modern single-page applications with intelligent fallback routing
 
 ## 🚀 Quick Start
 
@@ -152,54 +148,26 @@ All configuration is done via environment variables:
 ## 🐳 Docker Examples
 
 ### Simple Static Site
+### Docker
 
 ```dockerfile
 FROM ghcr.io/radiosilence/nano-web:latest
 COPY ./dist /public/
 ENV PORT=8080
-EXPOSE 8080
-```
-
-### SPA with Runtime Configuration
-
-```dockerfile
-FROM ghcr.io/radiosilence/nano-web:latest
-COPY ./build /public/
-ENV PORT=8080
 ENV SPA_MODE=true
-ENV CONFIG_PREFIX=REACT_APP_
-ENV LOG_LEVEL=warn
-EXPOSE 8080
 ```
 
-### Multi-stage Build
+Multi-stage builds work great too:
 
 ```dockerfile
-# Build stage
-FROM node:18-alpine AS builder
+FROM node:18-alpine AS build
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
 COPY . .
 RUN npm run build
 
-# Runtime stage
 FROM ghcr.io/radiosilence/nano-web:latest
-COPY --from=builder /app/dist /public/
-ENV PORT=8080
+COPY --from=build /app/dist /public/
 ENV SPA_MODE=true
-EXPOSE 8080
-```
-
-### CLI in Docker
-
-You can also use CLI flags directly in Docker:
-
-```dockerfile
-FROM ghcr.io/radiosilence/nano-web:latest
-COPY ./dist /app/
-EXPOSE 8080
-CMD ["nano-web", "serve", "/app", "--port", "8080", "--spa-mode", "--log-level", "info"]
 ```
 
 ### Configuration
@@ -288,61 +256,30 @@ ops instance create my-website -c ./config.json --port 8080
 ops instance create my-website -c ./config.json -t gcp
 ```
 
-## 🔧 Runtime Configuration for SPAs
+## 🔧 Runtime Environment Injection
 
-**⚠️ Important**: This feature is designed for public configuration only. Never expose secrets through this mechanism.
-
-nano-web supports runtime environment variable injection, perfect for dynamic API endpoints, feature flags, and client-side configuration.
-
-### HTML Template
+This is nano-web's secret sauce for SPAs. Instead of rebuilding your app for different environments, inject configuration at runtime:
 
 ```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>My App</title>
-    <script>
-      // Inject runtime environment variables
-      window.ENV = {{.Json}};
-      window.ENV_ESCAPED = "{{.EscapedJson}}";
-    </script>
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
-</html>
+<!-- Your index.html -->
+<script>
+  window.ENV = {{.Json}};  // Runtime environment injection
+</script>
 ```
-
-### JavaScript/TypeScript Usage
 
 ```typescript
-// Safe runtime environment access
-let runtimeEnv: Record<string, string> = {};
-
-try {
-  runtimeEnv = window.ENV || JSON.parse(window.ENV_ESCAPED || "{}");
-} catch (error) {
-  console.warn("Failed to parse runtime environment:", error);
-}
-
-// Use configuration
-const apiUrl = runtimeEnv.API_URL || "https://api.example.com";
-const enableFeature = runtimeEnv.ENABLE_FEATURE === "true";
+// Your React/Vue/whatever app
+const config = window.ENV || {};
+const apiUrl = config.API_URL || "fallback";
 ```
-
-### Deployment Example
 
 ```bash
-# Development
-docker run -e VITE_API_URL=http://localhost:3001 -e VITE_DEBUG=true my-app
-
-# Production
-docker run -e VITE_API_URL=https://api.prod.com -e VITE_DEBUG=false my-app
-
-# Using CLI flags instead of environment variables
-docker run my-app nano-web serve ./dist --port 8080 --spa-mode --config-prefix REACT_APP_
+# Same build, different configs
+docker run -e VITE_API_URL=http://localhost:3001 my-app    # dev
+docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
 ```
+
+**⚠️ Public config only** - don't put secrets here.
 ### Development Setup
 
 ```bash
@@ -383,36 +320,16 @@ task clean-all
 
 ## 📊 Logging
 
-nano-web provides structured JSON logging perfect for log aggregation systems like Datadog, ELK stack, or Splunk.
+Structured JSON by default, console format for development:
 
-### JSON Format (Production)
+```bash
+# Production (JSON)
+{"level":"info","time":"2024-01-15T10:30:45Z","message":"request served","method":"GET","path":"/","status":200,"duration_ms":1.2}
 
-```json
-{
-  "level": "info",
-  "time": "2024-01-15T10:30:45Z",
-  "message": "request served",
-  "method": "GET",
-  "path": "/api/users",
-  "user_agent": "Mozilla/5.0...",
-  "status": 200,
-  "content_length": 1024,
-  "duration_ms": 15.5
-}
+# Development (console)
+nano-web serve --log-format console --log-level debug
+2024-01-15T10:30:45Z INF request served method=GET path=/ status=200 duration_ms=1.2
 ```
-
-### Console Format (Development)
-
-```
-2024-01-15T10:30:45Z INF request served method=GET path=/api/users status=200 duration_ms=15.5
-```
-
-### Log Levels
-
-- `debug`: Detailed information for debugging
-- `info`: General operational messages
-- `warn`: Warning messages for unusual but handled situations
-- `error`: Error messages for failures
 
 ## 🏗️ Building from Source
 
@@ -458,42 +375,17 @@ task dev
 
 ## 📈 Performance
 
-nano-web is engineered for extreme performance with extensive optimizations:
-
-### 🚀 Benchmark Results
-
-**MacBook M3 Max (36GB RAM)**
+nano-web pre-caches everything in memory with compression, which makes it fast:
 
 ```bash
 wrk -d 10 -c 20 -t 10 http://localhost:80
-Running 10s test @ http://localhost:80
-  10 threads and 20 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   200.07us  130.48us   8.53ms   96.93%
-    Req/Sec    10.07k   352.62    11.09k    85.05%
-  1012393 requests in 10.10s, 7.12GB read
-Requests/sec: 100237.75
-Transfer/sec:    721.45MB
+  1,012,393 requests in 10.10s, 7.12GB read
+Requests/sec: 100,237
+Transfer/sec: 721MB/s
+Latency: 200μs avg (96.93% consistency)
 ```
 
-**Key Metrics:**
-
-- 🎯 **100K+ requests/second** - Sub-millisecond response times
-- ⚡ **200μs average latency** - Consistently fast responses
-- 📊 **721MB/s throughput** - High data transfer rates
-- 🎪 **96.93% latency consistency** - Predictable performance
-
-### ⚡ Performance Optimizations
-
-- **Zero-allocation request handling**: Pre-allocated byte slices and buffer pools
-- **Memory-mapped content**: All assets pre-loaded and compressed at startup
-- **Optimized FastHTTP configuration**: Custom server tuning for maximum throughput
-- **Atomic operations**: Lock-free request counters and statistics
-- **Byte-level operations**: Direct byte comparisons for headers and paths
-- **Smart compression**: Pre-compressed Brotli and Gzip content stored in memory
-- **Efficient routing**: RWMutex for concurrent reads with minimal locking
-
-Performance characteristics will vary based on your content size, server specifications, and traffic patterns. The pre-caching approach trades startup time and memory usage for exceptional request latency.
+The trade-off is simple: use more memory at startup for faster requests. Your results will vary based on content size and hardware, but the approach is consistent.
 
 ## 🤝 Contributing
 

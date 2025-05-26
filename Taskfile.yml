@@ -23,23 +23,17 @@ tasks:
     desc: "Show available tasks"
     cmd: task --list
 
-  # Development tasks
   dev:
-    desc: "🚀 Run development server with hot reload"
+    desc: "🚀 Run development server"
     deps: [build]
     cmd: ./{{.PKGNAME}} serve --port 8080 --log-format console --log-level debug
-    sources:
-      - "*.go"
-      - "go.mod"
-      - "go.sum"
 
   run:
-    desc: "🏃 Run the application directly with go run"
+    desc: "🏃 Run with go run"
     cmd: go run main.go serve --port 8080 --log-format console --log-level debug
 
-  # Building tasks
   build:
-    desc: "🏗️ Build the binary for current platform"
+    desc: "🏗️ Build binary"
     sources:
       - "*.go"
       - "go.mod"
@@ -49,65 +43,34 @@ tasks:
     cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.PKGNAME}} main.go
 
   build-all:
-    desc: "🌍 Build binaries for all platforms"
+    desc: "🌍 Build for all platforms"
     deps: [clean-dist]
     cmds:
-      - task: build-platform
-        vars: {GOOS: linux, GOARCH: amd64}
-      - task: build-platform
-        vars: {GOOS: linux, GOARCH: arm64}
-      - task: build-platform
-        vars: {GOOS: darwin, GOARCH: amd64}
-      - task: build-platform
-        vars: {GOOS: darwin, GOARCH: arm64}
-      - task: build-platform
-        vars: {GOOS: windows, GOARCH: amd64, EXT: .exe}
-      - task: build-platform
-        vars: {GOOS: freebsd, GOARCH: amd64}
+      - mkdir -p dist
+      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-amd64 main.go
+      - GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-linux-arm64 main.go
+      - GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-amd64 main.go
+      - GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-darwin-arm64 main.go
+      - GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-windows-amd64.exe main.go
+      - GOOS=freebsd GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/{{.PKGNAME}}-freebsd-amd64 main.go
 
-  build-platform:
-    desc: "🔧 Build for specific platform"
-    internal: true
-    vars:
-      EXT: '{{.EXT | default ""}}'
-      OUTPUT: "dist/{{.PKGNAME}}-{{.GOOS}}-{{.GOARCH}}{{.EXT}}"
-    env:
-      GOOS: "{{.GOOS}}"
-      GOARCH: "{{.GOARCH}}"
-    cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.OUTPUT}} main.go
-
-  # Testing tasks
   test:
     desc: "🧪 Run tests"
     cmd: go test -v -race ./...
 
   test-coverage:
-    desc: "📊 Run tests with coverage report"
+    desc: "📊 Run tests with coverage"
     cmds:
       - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
       - go tool cover -html=coverage.out -o coverage.html
-      - echo "Coverage report generated: coverage.html"
-
-  test-watch:
-    desc: "👀 Run tests in watch mode"
-    deps: [install-entr]
-    cmd: find . -name "*.go" | entr -c go test -v ./...
+      - echo "Coverage report generated coverage.html"
 
   bench:
     desc: "🔥 Run benchmarks"
     cmd: go test -bench=. -benchmem -count=3 ./...
 
-  bench-compare:
-    desc: "📈 Run benchmarks and compare with previous results"
-    cmds:
-      - go test -bench=. -benchmem -count=5 ./... | tee bench-new.txt
-      - test -f bench-old.txt && benchcmp bench-old.txt bench-new.txt || echo "No previous benchmark to compare"
-      - mv bench-new.txt bench-old.txt
-
-  # Code quality tasks
   lint:
     desc: "🔍 Run linter"
-    deps: [install-golangci-lint]
     cmd: golangci-lint run
 
   fmt:
@@ -121,13 +84,12 @@ tasks:
     cmd: go vet ./...
 
   check:
-    desc: "✅ Run all checks (test, lint, vet)"
+    desc: "✅ Run all checks"
     cmds:
       - task: test
       - task: lint
       - task: vet
 
-  # Dependencies
   deps:
     desc: "📦 Download dependencies"
     cmd: go mod download
@@ -138,27 +100,20 @@ tasks:
       - go get -u ./...
       - go mod tidy
 
-  deps-verify:
-    desc: "🔐 Verify dependencies"
-    cmd: go mod verify
-
-  # Cleaning tasks
   clean:
     desc: "🧹 Clean build artifacts"
     cmds:
       - rm -f {{.PKGNAME}}
       - rm -f coverage.out coverage.html
-      - rm -f bench-*.txt
 
   clean-dist:
-    desc: "🗑️ Clean distribution directory"
+    desc: "🗑️ Clean dist directory"
     cmd: rm -rf dist/
 
   clean-all:
     desc: "💥 Clean everything"
     deps: [clean, clean-dist, pkg-clean]
 
-  # Docker tasks
   docker-build:
     desc: "🐳 Build Docker image"
     cmd: docker build -t {{.PKGNAME}}:{{.VERSION}} -t {{.PKGNAME}}:latest .
@@ -168,16 +123,6 @@ tasks:
     deps: [docker-build]
     cmd: docker run --rm -p 8080:8080 -e PORT=8080 {{.PKGNAME}}:latest
 
-  docker-push:
-    desc: "📤 Push Docker image to registry"
-    deps: [docker-build]
-    cmds:
-      - docker tag {{.PKGNAME}}:{{.VERSION}} ghcr.io/radiosilence/{{.PKGNAME}}:{{.VERSION}}
-      - docker tag {{.PKGNAME}}:{{.VERSION}} ghcr.io/radiosilence/{{.PKGNAME}}:latest
-      - docker push ghcr.io/radiosilence/{{.PKGNAME}}:{{.VERSION}}
-      - docker push ghcr.io/radiosilence/{{.PKGNAME}}:latest
-
-  # Release tasks
   release-local:
     desc: "🚀 Create local release"
     deps: [build-all]
@@ -185,23 +130,8 @@ tasks:
       - mkdir -p {{.RELEASEDIR}}
       - cd dist && for file in {{.PKGNAME}}-*; do tar -czf ../{{.RELEASEDIR}}/$file.tar.gz $file; done
       - cd {{.RELEASEDIR}} && sha256sum *.tar.gz > checksums.txt
-      - echo "Local release created in {{.RELEASEDIR}}"
+      - echo "Local release created in release dir"
 
-  release-notes:
-    desc: "📝 Generate release notes"
-    vars:
-      LAST_TAG:
-        sh: git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo ""
-    cmd: |
-      if [ -n "{{.LAST_TAG}}" ]; then
-        echo "## Changes since {{.LAST_TAG}}"
-        git log --oneline --pretty=format:"- %s" {{.LAST_TAG}}..HEAD
-      else
-        echo "## Initial release"
-        git log --oneline --pretty=format:"- %s"
-      fi
-
-  # OPS/Unikernel package tasks
   pkg-clean:
     desc: "🧹 Clean package artifacts"
     cmd: rm -rf {{.RELEASEDIR}}
@@ -211,7 +141,9 @@ tasks:
     env:
       GOOS: "{{.PKGOS}}"
       GOARCH: "{{.PKGARCH}}"
-    cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.PKGDIR}}/{{.PKGNAME}} main.go
+    cmd: |
+      mkdir -p {{.PKGDIR}}
+      go build -ldflags="{{.LDFLAGS}}" -o {{.PKGDIR}}/{{.PKGNAME}} main.go
 
   pkg-create:
     desc: "📁 Create OPS package structure"
@@ -238,7 +170,7 @@ tasks:
     deps: [pkg-add]
     cmds:
       - cd {{.RELEASEDIR}} && tar czvf {{.PKGRELEASE}}-{{.PKGARCH}}.tar.gz {{.PKGRELEASE}}-{{.PKGARCH}}
-      - echo "Package bundle created: {{.RELEASEDIR}}/{{.PKGRELEASE}}-{{.PKGARCH}}.tar.gz"
+      - echo "Package bundle created"
 
   pkg-push:
     desc: "📤 Push OPS package"
@@ -250,66 +182,41 @@ tasks:
     deps: [pkg-add]
     cmd: ops pkg load -l {{.PKGRELEASE}} -p 80
 
-  # Health and utility tasks
   health:
     desc: "🩺 Run health check"
     deps: [build]
     cmd: ./{{.PKGNAME}} health-check
 
   version:
-    desc: "📋 Show version information"
-    cmd: echo "Version: {{.VERSION}}, Commit: {{.COMMIT}}, Built: {{.BUILD_TIME}}"
+    desc: "📋 Show version"
+    cmd: echo "Version {{.VERSION}} Commit {{.COMMIT}} Built {{.BUILD_TIME}}"
 
   info:
-    desc: "ℹ️ Show project information"
+    desc: "ℹ️ Show project info"
     cmds:
-      - echo "Project: {{.PKGNAME}}"
-      - echo "Version: {{.VERSION}}"
-      - echo "Commit: {{.COMMIT}}"
-      - echo "Build Time: {{.BUILD_TIME}}"
-      - echo "Go Version:" && go version
-      - echo "Platform: {{OS}}/{{ARCH}}"
+      - echo "Project {{.PKGNAME}}"
+      - echo "Version {{.VERSION}}"
+      - echo "Commit {{.COMMIT}}"
+      - echo "Build Time {{.BUILD_TIME}}"
+      - go version
+      - echo "Platform {{OS}}/{{ARCH}}"
 
-  # Installation helpers
-  install-deps:
-    desc: "🔧 Install development dependencies"
-    cmds:
-      - task: install-golangci-lint
-      - task: install-entr
-      - go install golang.org/x/tools/cmd/goimports@latest
-
-  install-golangci-lint:
-    desc: "Install golangci-lint"
-    status:
-      - which golangci-lint
-    cmd: |
-      curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
-
-  install-entr:
-    desc: "Install entr for file watching"
-    status:
-      - which entr
-    platforms: [darwin]
-    cmd: brew install entr
-
-  # Git helpers
   tag:
-    desc: "🏷️ Create a new tag"
+    desc: "🏷️ Create git tag"
     vars:
-      TAG: '{{.CLI_ARGS | default ""}}'
+      TAG: "{{.CLI_ARGS}}"
     preconditions:
       - sh: '[ -n "{{.TAG}}" ]'
-        msg: "Please provide a tag name: task tag -- v1.0.0"
+        msg: "Please provide a tag: task tag -- v1.0.0"
     cmds:
       - git tag -a {{.TAG}} -m "Release {{.TAG}}"
       - echo "Created tag {{.TAG}}"
-      - echo "Push with: git push origin {{.TAG}}"
+      - echo "Push with git push origin {{.TAG}}"
 
-  # CI/CD helpers
   ci:
-    desc: "🤖 Run CI pipeline locally"
+    desc: "🤖 Run CI pipeline"
     cmds:
-      - task: deps-verify
+      - task: deps
       - task: check
       - task: build-all
-      - echo "✅ CI pipeline completed successfully"
+      - echo "CI completed successfully"
