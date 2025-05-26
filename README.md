@@ -343,35 +343,42 @@ docker run -e VITE_API_URL=https://api.prod.com -e VITE_DEBUG=false my-app
 # Using CLI flags instead of environment variables
 docker run my-app nano-web serve ./dist --port 8080 --spa-mode --config-prefix REACT_APP_
 ```
+### Development Setup
 
 ```bash
 # Clone and setup
 git clone https://github.com/radiosilence/nano-web.git
 cd nano-web
 
-# Install dependencies
-go mod download
+# Install development dependencies
+task install-deps
 
-# Run in development mode with CLI flags
-go run main.go serve ./public --port 8080 --log-format console --log-level debug
+# Download Go dependencies
+task deps
 
-# Or using environment variables
-LOG_FORMAT=console LOG_LEVEL=debug go run main.go serve
+# Run in development mode
+task dev
 
-# Run tests
-go test -v ./...
+# Or run directly with go
+task run
+
+# Run all checks (tests, lint, vet)
+task check
 
 # Build for production
-go build -o nano-web main.go
+task build
 
 # Health check
-./nano-web health-check
+task health
 
-# Show version
-./nano-web version
+# Show version and build info
+task info
 
-# Test serve command
-./nano-web serve ./public --port 8080 --log-format console
+# Create a release
+task release-local
+
+# Clean build artifacts
+task clean-all
 ```
 
 ## 📊 Logging
@@ -409,19 +416,44 @@ nano-web provides structured JSON logging perfect for log aggregation systems li
 
 ## 🏗️ Building from Source
 
+### Prerequisites
+
+Install [Task](https://taskfile.dev/) for build automation:
+
+```bash
+# macOS
+brew install go-task/tap/go-task
+
+# Linux/Windows - see https://taskfile.dev/installation/
+```
+
+### Building
+
 ```bash
 # Clone the repository
 git clone https://github.com/radiosilence/nano-web.git
 cd nano-web
 
-# Build for your platform
-go build -o nano-web main.go
+# See all available tasks
+task
 
-# Build for Linux (common for containers)
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o nano-web-linux-amd64 main.go
+# Build for current platform
+task build
+
+# Build for all platforms
+task build-all
 
 # Run tests
-go test ./...
+task test
+
+# Run tests with coverage
+task test-coverage
+
+# Run benchmarks
+task bench
+
+# Development server with hot reload
+task dev
 ```
 
 ## 📈 Performance
