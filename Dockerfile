@@ -16,14 +16,14 @@ COPY go.mod go.sum ./
 # Download dependencies
 RUN go mod download && go mod verify
 
-# Copy source code
-COPY main.go ./
+# Copy source code and VERSION file
+COPY *.go VERSION ./
 
 # Build the binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \
     -a -installsuffix cgo \
-    -o nano-web main.go
+    -o nano-web .
 
 # Runtime stage
 FROM scratch
@@ -44,7 +44,7 @@ EXPOSE $PORT
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/nano-web", "--health-check"] || exit 1
+    CMD ["/nano-web", "health-check"]
 
 # Set labels for better maintainability
 LABEL org.opencontainers.image.title="nano-web"
