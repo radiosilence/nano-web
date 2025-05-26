@@ -8,9 +8,9 @@ Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed f
 
 ## ✨ What makes nano-web different
 
-- 🔧 **Runtime environment injection** - Safely inject environment variables into static files at runtime, perfect for dynamic API endpoints and configuration without rebuilding
 - 🚄 **Ridiculously fast** - Pre-caches everything in memory with smart compression, serves 100k+ requests/second with sub-millisecond latency
 - 📦 **Tiny footprint** - Tiny (<20MB) Docker image
+- 🔧 **Runtime environment injection** - Safely inject environment variables into JS at runtime, perfect for easily configuring containers without rebuilding
 - 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing
 
 ## 🚀 Quick Start
