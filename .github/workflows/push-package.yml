@@ -1,4 +1,4 @@
-name: Push Package
+name: OPS Package
 
 permissions:
   contents: read
