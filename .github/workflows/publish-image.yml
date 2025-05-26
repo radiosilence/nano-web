@@ -18,7 +18,7 @@ jobs:
 
   publish:
     needs: test
-    runs-on: ubuntu-latest-4-cores
+    runs-on: ubuntu-latest
     permissions:
       packages: write
       contents: read
