@@ -571,6 +571,9 @@ func main() {
 			Compact: true,
 			Summary: true,
 		}),
+		kong.Vars{
+			"version": "0.3.3",
+		},
 	)
 
 	err := ctx.Run()
