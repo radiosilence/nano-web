@@ -22,11 +22,13 @@ Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed f
 ### CLI Usage
 
 #### Install via Go
+
 ```bash
 go install github.com/radiosilence/nano-web@latest
 ```
 
 #### Download Binary
+
 ```bash
 # Download the latest release for your platform
 wget https://github.com/radiosilence/nano-web/releases/latest/download/nano-web-linux-amd64.tar.gz
@@ -38,6 +40,7 @@ mv nano-web-linux-amd64 /usr/local/bin/nano-web
 ```
 
 #### Usage Examples
+
 ```bash
 # Basic usage - serve files from ./public/ on port 80
 nano-web serve
@@ -58,7 +61,6 @@ nano-web health-check
 # Show version
 nano-web version
 ```
-</edits>
 
 ### Docker
 
@@ -69,11 +71,7 @@ ENV PORT=8080
 ENV SPA_MODE=true
 ENV LOG_LEVEL=info
 ```
-</edits>
 
-<edits>
-
-<old_text>
 ## ⚙️ Configuration
 
 Configuration can be done via CLI flags, environment variables, or a combination of both. CLI flags take precedence over environment variables.
@@ -106,14 +104,14 @@ Flags:
 
 ### Environment Variables
 
-| Variable | CLI Flag | Default | Description |
-|----------|----------|---------|-------------|
-| `PORT` | `--port` | `80` | Port to listen on |
-| `SPA_MODE` | `--spa-mode` | `false` | Enable SPA mode (serve index.html for 404s) |
+| Variable        | CLI Flag          | Default | Description                                       |
+| --------------- | ----------------- | ------- | ------------------------------------------------- |
+| `PORT`          | `--port`          | `80`    | Port to listen on                                 |
+| `SPA_MODE`      | `--spa-mode`      | `false` | Enable SPA mode (serve index.html for 404s)       |
 | `CONFIG_PREFIX` | `--config-prefix` | `VITE_` | Prefix for runtime environment variable injection |
-| `LOG_LEVEL` | `--log-level` | `info` | Logging level: `debug`, `info`, `warn`, `error` |
-| `LOG_FORMAT` | `--log-format` | `json` | Log format: `json` or `console` |
-| `LOG_REQUESTS` | `--log-requests` | `true` | Enable/disable request logging |
+| `LOG_LEVEL`     | `--log-level`     | `info`  | Logging level: `debug`, `info`, `warn`, `error`   |
+| `LOG_FORMAT`    | `--log-format`    | `json`  | Log format: `json` or `console`                   |
+| `LOG_REQUESTS`  | `--log-requests`  | `true`  | Enable/disable request logging                    |
 
 ### Usage Examples
 
@@ -141,15 +139,15 @@ nano-web version
 
 All configuration is done via environment variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `80` | Port to listen on |
-| `PUBLIC_DIR` | `public` | Directory containing static files |
-| `SPA_MODE` | `0` | Set to `1` to serve `index.html` for 404s (SPA routing) |
-| `CONFIG_PREFIX` | `VITE_` | Prefix for runtime environment variable injection |
-| `LOG_LEVEL` | `info` | Logging level: `debug`, `info`, `warn`, `error` |
-| `LOG_FORMAT` | `json` | Log format: `json` or `console` |
-| `LOG_REQUESTS` | `true` | Enable/disable request logging |
+| Variable        | Default  | Description                                             |
+| --------------- | -------- | ------------------------------------------------------- |
+| `PORT`          | `80`     | Port to listen on                                       |
+| `PUBLIC_DIR`    | `public` | Directory containing static files                       |
+| `SPA_MODE`      | `0`      | Set to `1` to serve `index.html` for 404s (SPA routing) |
+| `CONFIG_PREFIX` | `VITE_`  | Prefix for runtime environment variable injection       |
+| `LOG_LEVEL`     | `info`   | Logging level: `debug`, `info`, `warn`, `error`         |
+| `LOG_FORMAT`    | `json`   | Log format: `json` or `console`                         |
+| `LOG_REQUESTS`  | `true`   | Enable/disable request logging                          |
 
 ## 🐳 Docker Examples
 
@@ -203,11 +201,7 @@ COPY ./dist /app/
 EXPOSE 8080
 CMD ["nano-web", "serve", "/app", "--port", "8080", "--spa-mode", "--log-level", "info"]
 ```
-</edits>
 
-<edits>
-
-<old_text>
 ### Configuration
 
 Create a `config.json`:
@@ -215,7 +209,15 @@ Create a `config.json`:
 ```json
 {
   "Dirs": ["public"],
-  "Args": ["serve", "./public", "--port", "8080", "--spa-mode", "--log-level", "info"],
+  "Args": [
+    "serve",
+    "./public",
+    "--port",
+    "8080",
+    "--spa-mode",
+    "--log-level",
+    "info"
+  ],
   "RunConfig": {
     "Ports": ["8080"]
   }
@@ -298,7 +300,7 @@ nano-web supports runtime environment variable injection, perfect for dynamic AP
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title>My App</title>
     <script>
       // Inject runtime environment variables
@@ -341,11 +343,7 @@ docker run -e VITE_API_URL=https://api.prod.com -e VITE_DEBUG=false my-app
 # Using CLI flags instead of environment variables
 docker run my-app nano-web serve ./dist --port 8080 --spa-mode --config-prefix REACT_APP_
 ```
-</edits>
 
-<edits>
-
-<old_text>
 ```bash
 # Clone and setup
 git clone https://github.com/radiosilence/nano-web.git
@@ -433,6 +431,7 @@ nano-web is engineered for extreme performance with extensive optimizations:
 ### 🚀 Benchmark Results
 
 **MacBook M3 Max (36GB RAM)**
+
 ```bash
 wrk -d 10 -c 20 -t 10 http://localhost:80
 Running 10s test @ http://localhost:80
@@ -446,6 +445,7 @@ Transfer/sec:    721.45MB
 ```
 
 **Key Metrics:**
+
 - 🎯 **100K+ requests/second** - Sub-millisecond response times
 - ⚡ **200μs average latency** - Consistently fast responses
 - 📊 **721MB/s throughput** - High data transfer rates
