@@ -369,8 +369,8 @@ func populateRoutes(publicDir string) {
 	log.Debug().Str("public_dir", publicDir).Msg("starting route population")
 
 	routeCount := 0
-	filepath.Walk(publicDir, func(path string, info os.FileInfo, err error) error {
-		if info.IsDir() {
+	filepath.WalkDir(publicDir, func(path string, d os.DirEntry, err error) error {
+		if d.IsDir() {
 			return nil
 		}
 
@@ -393,10 +393,10 @@ func populateRoutes(publicDir string) {
 		routeCount++
 
 		fmt.Println("-----")
-		log.Debug().Str("file_name", info.Name()).Str("file_path", path).Msg("debug file name")
+		log.Debug().Str("file_name", d.Name()).Str("file_path", path).Msg("debug file name")
 		log.Debug().Str("url_path", urlPath).Msg("debug url path")
 
-		if info.Name() == "index.html" {
+		if d.Name() == "index.html" {
 			indexUrlPath := strings.Replace(urlPath, "/index.html", "", 1)
 			log.Debug().Str("index_url_path", indexUrlPath).Msg("index url path")
 			if indexUrlPath == "" {
