@@ -192,114 +192,9 @@ func getAppEnv(prefix string) map[string]string {
 	return appEnv
 }
 
-var mimetypes = map[string][]byte{
-	".bash":          []byte("text/plain"),
-	".c":             []byte("text/plain"),
-	".cc":            []byte("text/plain"),
-	".cfg":           []byte("text/plain"),
-	".clj":           []byte("text/plain"),
-	".cljs":          []byte("text/plain"),
-	".cmake":         []byte("text/plain"),
-	".conf":          []byte("text/plain"),
-	".cpp":           []byte("text/plain"),
-	".cr":            []byte("text/plain"),
-	".cs":            []byte("text/plain"),
-	".css":           []byte("text/css"),
-	".csv":           []byte("text/csv"),
-	".cxx":           []byte("text/plain"),
-	".dart":          []byte("text/plain"),
-	".doc":           []byte("application/msword"),
-	".dockerfile":    []byte("text/plain"),
-	".editorconfig":  []byte("text/plain"),
-	".edn":           []byte("text/plain"),
-	".elm":           []byte("text/plain"),
-	".env":           []byte("text/plain"),
-	".eot":           []byte("application/vnd.ms-fontobject"),
-	".eslintrc":      []byte("text/plain"),
-	".ex":            []byte("text/plain"),
-	".exs":           []byte("text/plain"),
-	".fish":          []byte("text/plain"),
-	".fs":            []byte("text/plain"),
-	".gif":           []byte("image/gif"),
-	".gitattributes": []byte("text/plain"),
-	".gitignore":     []byte("text/plain"),
-	".go":            []byte("text/plain"),
-	".gradle":        []byte("text/plain"),
-	".h":             []byte("text/plain"),
-	".hpp":           []byte("text/plain"),
-	".hs":            []byte("text/plain"),
-	".html":          []byte("text/html"),
-	".ico":           []byte("image/x-icon"),
-	".ini":           []byte("text/plain"),
-	".java":          []byte("text/plain"),
-	".jl":            []byte("text/plain"),
-	".jpeg":          []byte("image/jpeg"),
-	".jpg":           []byte("image/jpeg"),
-	".js":            []byte("text/javascript"),
-	".json":          []byte("application/json"),
-	".jsx":           []byte("text/javascript"),
-	".kt":            []byte("text/plain"),
-	".lock":          []byte("text/plain"),
-	".log":           []byte("text/plain"),
-	".lua":           []byte("text/plain"),
-	".makefile":      []byte("text/plain"),
-	".markdown":      []byte("text/plain"),
-	".md":            []byte("text/plain"),
-	".ml":            []byte("text/plain"),
-	".mp3":           []byte("audio/mpeg"),
-	".mp4":           []byte("video/mp4"),
-	".nim":           []byte("text/plain"),
-	".ogg":           []byte("audio/ogg"),
-	".otf":           []byte("font/otf"),
-	".pdf":           []byte("application/pdf"),
-	".php":           []byte("text/plain"),
-	".png":           []byte("image/png"),
-	".po":            []byte("text/plain"),
-	".pom":           []byte("text/xml"),
-	".prettierrc":    []byte("text/plain"),
-	".ps1":           []byte("text/plain"),
-	".py":            []byte("text/plain"),
-	".r":             []byte("text/plain"),
-	".rb":            []byte("text/plain"),
-	".rs":            []byte("text/plain"),
-	".sbt":           []byte("text/plain"),
-	".scala":         []byte("text/plain"),
-	".sh":            []byte("text/plain"),
-	".sql":           []byte("text/plain"),
-	".svelte":        []byte("text/plain"),
-	".svg":           []byte("image/svg+xml"),
-	".swift":         []byte("text/plain"),
-	".toml":          []byte("text/plain"),
-	".ts":            []byte("text/plain"),
-	".tsx":           []byte("text/plain"),
-	".ttf":           []byte("font/ttf"),
-	".txt":           []byte("text/plain"),
-	".v":             []byte("text/plain"),
-	".vue":           []byte("text/plain"),
-	".wav":           []byte("audio/wav"),
-	".webm":          []byte("video/webm"),
-	".webp":          []byte("image/webp"),
-	".woff":          []byte("font/woff"),
-	".woff2":         []byte("font/woff2"),
-	".xml":           []byte("application/xml"),
-	".yaml":          []byte("text/plain"),
-	".yml":           []byte("text/plain"),
-	".zig":           []byte("text/plain"),
-	".zip":           []byte("application/zip"),
-	".zsh":           []byte("text/plain"),
-}
 
-var defaultMimetype = []byte("application/octet-stream")
 
-func getMimetype(path string) []byte {
-	if idx := strings.LastIndexByte(path, '.'); idx > 0 {
-		ext := strings.ToLower(path[idx:])
-		if mimetype, ok := mimetypes[ext]; ok {
-			return mimetype
-		}
-	}
-	return defaultMimetype
-}
+
 
 type TemplateData struct {
 	Env         map[string]string `json:"env"`
@@ -338,16 +233,7 @@ func templateRoute(name string, content []byte) ([]byte, error) {
 	return result, nil
 }
 
-func shouldTemplate(mimetype []byte) bool {
-	return bytes.Equal(mimetype, []byte("text/html"))
-}
 
-func shouldCompress(mimetype []byte) bool {
-	return bytes.Equal(mimetype, []byte("text/html")) ||
-		bytes.Equal(mimetype, []byte("text/css")) ||
-		bytes.Equal(mimetype, []byte("text/javascript")) ||
-		bytes.Equal(mimetype, []byte("application/json"))
-}
 
 func gzipData(dat []byte) []byte {
 	buffer := bufferPool.Get().(*bytes.Buffer)
