@@ -40,7 +40,9 @@ func (h *HealthCheckCmd) Run() error {
 type VersionCmd struct{}
 
 func (v *VersionCmd) Run() error {
-	fmt.Println("nano-web development version")
+	fmt.Println(FullVersion())
+	fmt.Println("Ultra-fast static file server built with Go")
+	fmt.Println("Repository: https://github.com/radiosilence/nano-web")
 	return nil
 }
 
