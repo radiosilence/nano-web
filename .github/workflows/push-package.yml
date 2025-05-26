@@ -14,6 +14,9 @@ on:
         required: true
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   push:
     name: Push ${{ inputs.arch }}
     runs-on: ubuntu-latest
