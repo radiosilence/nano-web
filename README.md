@@ -1,94 +1,291 @@
-# nano-web
+# 🚀 nano-web
 
-![publish-container](https://github.com/radiosilence/nano-web/actions/workflows/publish-container.yml/badge.svg) ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
+![publish-container](https://github.com/radiosilence/nano-web/actions/workflows/publish-container.yml/badge.svg) ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg) [![Go Report Card](https://goreportcard.com/badge/github.com/radiosilence/nano-web)](https://goreportcard.com/report/github.com/radiosilence/nano-web) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Hyper-minimal low-latency webserver for serving SPAs and static content based on fasthttp.
+> ⚡ **Hyper-minimal, lightning-fast web server for SPAs and static content**
 
-- Precaches, templates, compresses all resources into memory at startup to reduce latency.
-- Brotli and gzip compression.
-- Designed to work as a docker base image or as a nanovm unikernel.
-- Includes runtime templating of environment variables (configurable prefix).
-- Index pages so works nicely with things like Astro from the get-go.
-- SPA mode to service 404s as index (200) to support client side routing.
+Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal resource usage. Perfect for containerized deployments, edge computing, and unikernel environments.
 
-# Config as ENV
+## ✨ Features
 
-- `PORT` The port to listen on. Defaults to `80`
-- `SPA_MODE` when set to `1` 404 request will return `/public/index.html` as a `200`.
-- `CONFIG_PREFIX` will set the prefix to scan environment variables in order to enable runtime config. Defaults to `VITE_`
+- 🚄 **Ultra-fast**: Built on FastHTTP for maximum performance
+- 💾 **Memory-optimized**: Pre-caches and compresses all resources at startup
+- 🗜️ **Smart compression**: Automatic Brotli and Gzip compression
+- 🎯 **SPA-ready**: Built-in support for Single Page Applications
+- 🔧 **Runtime templating**: Environment variable injection for dynamic configuration
+- 📦 **Container-first**: Optimized for Docker and unikernel deployments
+- 📊 **Structured logging**: JSON logging with configurable levels
+- 🎨 **Zero-config**: Works out of the box with sensible defaults
 
-# Docker Quick Start
+## 🚀 Quick Start
 
-```Dockerfile
+### Docker
 
+```dockerfile
 FROM ghcr.io/radiosilence/nano-web:latest
 COPY ./dist /public/
-ENV PORT=8081
+ENV PORT=8080
 ENV SPA_MODE=1
-
+ENV LOG_LEVEL=info
 ```
 
-# Nanos/OPS Quick Start
+### Binary
 
-You'll want a `config.json` for your project that looks something like this:
+```bash
+# Download the latest release
+wget https://github.com/radiosilence/nano-web/releases/latest/download/nano-web-linux-amd64
+chmod +x nano-web-linux-amd64
+
+# Place your static files in ./public/
+mkdir public
+echo "<h1>Hello World!</h1>" > public/index.html
+
+# Run the server
+./nano-web-linux-amd64
+```
+
+## ⚙️ Configuration
+
+All configuration is done via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `80` | Port to listen on |
+| `PUBLIC_DIR` | `public` | Directory containing static files |
+| `SPA_MODE` | `0` | Set to `1` to serve `index.html` for 404s (SPA routing) |
+| `CONFIG_PREFIX` | `VITE_` | Prefix for runtime environment variable injection |
+| `LOG_LEVEL` | `info` | Logging level: `debug`, `info`, `warn`, `error` |
+| `LOG_FORMAT` | `json` | Log format: `json` or `console` |
+| `LOG_REQUESTS` | `true` | Enable/disable request logging |
+
+## 🐳 Docker Examples
+
+### Simple Static Site
+
+```dockerfile
+FROM ghcr.io/radiosilence/nano-web:latest
+COPY ./dist /public/
+ENV PORT=8080
+EXPOSE 8080
+```
+
+### SPA with Runtime Configuration
+
+```dockerfile
+FROM ghcr.io/radiosilence/nano-web:latest
+COPY ./build /public/
+ENV PORT=8080
+ENV SPA_MODE=1
+ENV CONFIG_PREFIX=REACT_APP_
+ENV LOG_LEVEL=warn
+EXPOSE 8080
+```
+
+### Multi-stage Build
+
+```dockerfile
+# Build stage
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+RUN npm run build
+
+# Runtime stage
+FROM ghcr.io/radiosilence/nano-web:latest
+COPY --from=builder /app/dist /public/
+ENV PORT=8080
+ENV SPA_MODE=1
+EXPOSE 8080
+```
+
+## 🎯 Nanos/OPS Unikernel
+
+Perfect for ultra-lightweight unikernel deployments:
+
+### Configuration
+
+Create a `config.json`:
 
 ```json
 {
   "Dirs": ["public"],
   "Env": {
     "SPA_MODE": "1",
-    "PORT": "8081"
+    "PORT": "8080",
+    "LOG_LEVEL": "info"
   },
   "RunConfig": {
-    "Ports": ["8081"]
+    "Ports": ["8080"]
   }
 }
 ```
 
-Make sure your public files are in a `./public` directory relative to CWD.
+### Build and Run
 
-Then you can run this command to build your image:
-
-```
+```bash
+# Build the unikernel image
 ops image create -c config.json --package radiosilence/nano-web:latest -i my-website
+
+# Test locally
+ops instance create my-website -c ./config.json --port 8080
+
+# Deploy to cloud
+ops instance create my-website -c ./config.json -t gcp
 ```
 
-Then run locally to test:
+## 🔧 Runtime Configuration for SPAs
 
-```
-ops instance create my-website -c ./config.json --port 8081
-```
+**⚠️ Important**: This feature is designed for public configuration only. Never expose secrets through this mechanism.
 
-# Runtime config for SPAs
+nano-web supports runtime environment variable injection, perfect for dynamic API endpoints, feature flags, and client-side configuration.
 
-**THIS IS NOT INTENDED FOR STORING SECRETS, ALL VARIABLES WILL BE PUBLIC TO CLIENT**
-
-If are using `SPA_MODE` and you have set `CONFIG_PREFIX`, or use variables starting with `VITE_` by default, the server will
-allow injection of environment variables at runtime, which is useful for configuring dynamically changing API urls, client IDs,
-etc, in a dynamically scaling/routing environment such as Kubernetes.
-
-Here's an example `index.html` that utilises this:
+### HTML Template
 
 ```html
 <!DOCTYPE html>
-<html lang="en" data-theme="cf">
+<html lang="en">
   <head>
+    <meta charset="UTF-8">
+    <title>My App</title>
     <script>
-      window.RUNTIME_ENV = "{{.EscapedJson}}";
+      // Inject runtime environment variables
+      window.ENV = {{.Json}};
+      window.ENV_ESCAPED = "{{.EscapedJson}}";
     </script>
   </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>
 ```
 
-And your client side TS which is safe to be bundled:
+### JavaScript/TypeScript Usage
 
 ```typescript
+// Safe runtime environment access
 let runtimeEnv: Record<string, string> = {};
+
 try {
-  runtimeEnv = JSON.parse((window as any).RUNTIME_ENV ?? "{}");
-} catch {
-  // do nothing
+  runtimeEnv = window.ENV || JSON.parse(window.ENV_ESCAPED || "{}");
+} catch (error) {
+  console.warn("Failed to parse runtime environment:", error);
+}
+
+// Use configuration
+const apiUrl = runtimeEnv.API_URL || "https://api.example.com";
+const enableFeature = runtimeEnv.ENABLE_FEATURE === "true";
+```
+
+### Deployment Example
+
+```bash
+# Development
+docker run -e VITE_API_URL=http://localhost:3001 -e VITE_DEBUG=true my-app
+
+# Production
+docker run -e VITE_API_URL=https://api.prod.com -e VITE_DEBUG=false my-app
+```
+
+## 📊 Logging
+
+nano-web provides structured JSON logging perfect for log aggregation systems like Datadog, ELK stack, or Splunk.
+
+### JSON Format (Production)
+
+```json
+{
+  "level": "info",
+  "time": "2024-01-15T10:30:45Z",
+  "message": "request served",
+  "method": "GET",
+  "path": "/api/users",
+  "user_agent": "Mozilla/5.0...",
+  "status": 200,
+  "content_length": 1024,
+  "duration_ms": 15.5
 }
 ```
 
-In this way, you can reference these variables that can be set when the container is spun-up.
+### Console Format (Development)
+
+```
+2024-01-15T10:30:45Z INF request served method=GET path=/api/users status=200 duration_ms=15.5
+```
+
+### Log Levels
+
+- `debug`: Detailed information for debugging
+- `info`: General operational messages
+- `warn`: Warning messages for unusual but handled situations
+- `error`: Error messages for failures
+
+## 🏗️ Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/radiosilence/nano-web.git
+cd nano-web
+
+# Build for your platform
+go build -o nano-web main.go
+
+# Build for Linux (common for containers)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o nano-web-linux-amd64 main.go
+
+# Run tests
+go test ./...
+```
+
+## 📈 Performance
+
+nano-web is designed for efficient serving of static content:
+
+- **Memory efficient**: All assets are pre-loaded and compressed at startup
+- **Minimal allocations**: Request handling optimized for low garbage collection pressure
+- **Smart compression**: Automatic content encoding negotiation (Brotli/Gzip)
+- **FastHTTP**: Built on the FastHTTP library for Go
+
+Performance characteristics will vary based on your content size, server specifications, and traffic patterns. The pre-caching approach trades startup time and memory usage for reduced request latency.
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### Development Setup
+
+```bash
+# Clone and setup
+git clone https://github.com/radiosilence/nano-web.git
+cd nano-web
+
+# Install dependencies
+go mod download
+
+# Run in development mode
+LOG_FORMAT=console LOG_LEVEL=debug go run main.go
+
+# Run tests
+go test -v ./...
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [FastHTTP](https://github.com/valyala/fasthttp) - The blazing fast HTTP library
+- [Zerolog](https://github.com/rs/zerolog) - Structured logging library
+- [Brotli](https://github.com/google/brotli) - Compression algorithm
+
+---
+
+<div align="center">
+
+**[Website](https://nano-web.dev)** • **[Documentation](https://docs.nano-web.dev)** • **[Examples](https://github.com/radiosilence/nano-web/tree/main/examples)**
+
+Made with ❤️ by the nano-web team
+
+</div>

@@ -8,7 +8,11 @@ on:
     tags:
       - v*
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   publish:
+    needs: test
     uses: radiosilence/nano-web/.github/workflows/push-package.yml@main
     with:
       arch: amd64
