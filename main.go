@@ -392,7 +392,6 @@ func populateRoutes(publicDir string) {
 		routes.m[urlPath] = route
 		routeCount++
 
-		fmt.Println("-----")
 		log.Debug().Str("file_name", d.Name()).Str("file_path", path).Msg("debug file name")
 		log.Debug().Str("url_path", urlPath).Msg("debug url path")
 
