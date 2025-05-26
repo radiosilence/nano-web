@@ -13,6 +13,20 @@ Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed f
 - 🔧 **Runtime environment injection** - Safely inject environment variables into JS at runtime, perfect for easily configuring containers without rebuilding
 - 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing
 
+## 📈 Performance
+
+nano-web pre-caches everything in memory with compression, which makes it fast:
+
+```bash
+wrk -d 10 -c 20 -t 10 http://localhost:80
+  1,012,393 requests in 10.10s, 7.12GB read
+Requests/sec: 100,237
+Transfer/sec: 721MB/s
+Latency: 200μs avg (96.93% consistency)
+```
+
+The trade-off is simple: use more memory at startup for faster requests. Your results will vary based on content size and hardware, but the approach is consistent.
+
 ## 🐳 Docker
 
 ```dockerfile
@@ -38,17 +52,19 @@ ENV PORT=3000
 
 Instead of rebuilding your app for different environments, inject configuration at runtime:
 
+**⚠️ Public config only** - don't put secrets here.
+
 ```html
 <!-- Your index.html -->
 <script>
-  window.ENV = {{.Json}};  // Runtime environment injection
+  window.ENV = {{.Json}};
+  window.ENV_ESCAPED = "{{.EscapedJson}}";
 </script>
 ```
 
 ```typescript
 // Your React/Vue/whatever app
-const config = window.ENV || {};
-const apiUrl = config.API_URL || "fallback";
+const { API_URL } = window.ENV || {};
 ```
 
 ```bash
@@ -137,8 +153,6 @@ ops instance create my-website -c ./config.json --port 8080
 ops instance create my-website -c ./config.json -t gcp
 ```
 
-**⚠️ Public config only** - don't put secrets here.
-
 ### Development Setup
 
 ```bash
@@ -185,9 +199,6 @@ Structured JSON by default, console format for development:
 # Production (JSON)
 {"level":"info","time":"2024-01-15T10:30:45Z","message":"request served","method":"GET","path":"/","status":200,"duration_ms":1.2}
 
-# Development (console)
-nano-web serve --log-format console --log-level debug
-2024-01-15T10:30:45Z INF request served method=GET path=/ status=200 duration_ms=1.2
 ```
 
 ## 🏗️ Building from Source
@@ -232,20 +243,6 @@ task bench
 task dev
 ```
 
-## 📈 Performance
-
-nano-web pre-caches everything in memory with compression, which makes it fast:
-
-```bash
-wrk -d 10 -c 20 -t 10 http://localhost:80
-  1,012,393 requests in 10.10s, 7.12GB read
-Requests/sec: 100,237
-Transfer/sec: 721MB/s
-Latency: 200μs avg (96.93% consistency)
-```
-
-The trade-off is simple: use more memory at startup for faster requests. Your results will vary based on content size and hardware, but the approach is consistent.
-
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
@@ -280,9 +277,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <div align="center">
-
-**[Website](https://nano-web.dev)** • **[Documentation](https://docs.nano-web.dev)** • **[Examples](https://github.com/radiosilence/nano-web/tree/main/examples)**
-
-Made with ❤️ by the nano-web team
-
+Made with ❤️ by the @radiosilence
 </div>
