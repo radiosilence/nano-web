@@ -1,4 +1,4 @@
-module github.com/compliance-framework/portal
+module github.com/radiosilence/nano-web
 
 go 1.23.4
 
