@@ -21,23 +21,44 @@ Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed f
 
 ### CLI Usage
 
+#### Install via Go
 ```bash
-# Download the latest release
-wget https://github.com/radiosilence/nano-web/releases/latest/download/nano-web-linux-amd64
+go install github.com/radiosilence/nano-web@latest
+```
+
+#### Download Binary
+```bash
+# Download the latest release for your platform
+wget https://github.com/radiosilence/nano-web/releases/latest/download/nano-web-linux-amd64.tar.gz
+tar -xzf nano-web-linux-amd64.tar.gz
 chmod +x nano-web-linux-amd64
 
+# Or use the shorter name after installation
+mv nano-web-linux-amd64 /usr/local/bin/nano-web
+```
+
+#### Usage Examples
+```bash
 # Basic usage - serve files from ./public/ on port 80
-./nano-web-linux-amd64
+nano-web serve
 
 # Serve files from custom directory on port 8080
-./nano-web-linux-amd64 ./dist --port 8080
+nano-web serve ./dist --port 8080
 
 # Enable SPA mode with custom configuration
-./nano-web-linux-amd64 ./build --port 3000 --spa-mode --log-level debug
+nano-web serve ./build --port 3000 --spa-mode --log-level debug
 
 # See all available options
-./nano-web-linux-amd64 --help
+nano-web --help
+nano-web serve --help
+
+# Health check (useful for monitoring)
+nano-web health-check
+
+# Show version
+nano-web version
 ```
+</edits>
 
 ### Docker
 
@@ -60,10 +81,18 @@ Configuration can be done via CLI flags, environment variables, or a combination
 ### CLI Flags
 
 ```bash
-nano-web [PUBLIC_DIR] [flags]
+nano-web <command>
+
+Commands:
+  serve           Start the web server (default)
+  health-check    Perform health check and exit
+  version         Show version information
+
+# For the serve command:
+nano-web serve [PUBLIC_DIR] [flags]
 
 Arguments:
-  PUBLIC_DIR    Directory containing static files to serve (default: "public")
+  PUBLIC_DIR                  Directory containing static files to serve (default: "public")
 
 Flags:
   -p, --port INT              Port to listen on (default: 80)
@@ -72,11 +101,7 @@ Flags:
       --log-level STRING      Logging level (debug|info|warn|error) (default: "info")
       --log-format STRING     Log format (json|console) (default: "json")
       --log-requests          Enable request logging (default: true)
-  -h, --help                  Show help
-
-Commands:
-  health-check  Perform health check and exit
-  version       Show version information
+  -h, --help                  Show context-sensitive help
 ```
 
 ### Environment Variables
@@ -94,16 +119,16 @@ Commands:
 
 ```bash
 # Basic usage with defaults
-nano-web
+nano-web serve
 
 # Serve custom directory on different port
-nano-web ./dist --port 8080
+nano-web serve ./dist --port 8080
 
 # SPA mode with console logging for development
-nano-web ./build --spa-mode --log-format console --log-level debug
+nano-web serve ./build --spa-mode --log-format console --log-level debug
 
 # Production setup with custom config prefix
-nano-web /var/www --port 443 --config-prefix REACT_APP_ --log-level warn
+nano-web serve /var/www --port 443 --config-prefix REACT_APP_ --log-level warn
 
 # Health check (useful for Docker health checks)
 nano-web health-check
@@ -176,7 +201,7 @@ You can also use CLI flags directly in Docker:
 FROM ghcr.io/radiosilence/nano-web:latest
 COPY ./dist /app/
 EXPOSE 8080
-CMD ["/app", "--port", "8080", "--spa-mode", "--log-level", "info"]
+CMD ["nano-web", "serve", "/app", "--port", "8080", "--spa-mode", "--log-level", "info"]
 ```
 </edits>
 
@@ -190,7 +215,7 @@ Create a `config.json`:
 ```json
 {
   "Dirs": ["public"],
-  "Args": ["./public", "--port", "8080", "--spa-mode", "--log-level", "info"],
+  "Args": ["serve", "./public", "--port", "8080", "--spa-mode", "--log-level", "info"],
   "RunConfig": {
     "Ports": ["8080"]
   }
@@ -314,7 +339,7 @@ docker run -e VITE_API_URL=http://localhost:3001 -e VITE_DEBUG=true my-app
 docker run -e VITE_API_URL=https://api.prod.com -e VITE_DEBUG=false my-app
 
 # Using CLI flags instead of environment variables
-docker run my-app nano-web ./dist --port 8080 --spa-mode --config-prefix REACT_APP_
+docker run my-app nano-web serve ./dist --port 8080 --spa-mode --config-prefix REACT_APP_
 ```
 </edits>
 
@@ -330,10 +355,10 @@ cd nano-web
 go mod download
 
 # Run in development mode with CLI flags
-go run main.go ./public --port 8080 --log-format console --log-level debug
+go run main.go serve ./public --port 8080 --log-format console --log-level debug
 
 # Or using environment variables
-LOG_FORMAT=console LOG_LEVEL=debug go run main.go
+LOG_FORMAT=console LOG_LEVEL=debug go run main.go serve
 
 # Run tests
 go test -v ./...
@@ -346,6 +371,9 @@ go build -o nano-web main.go
 
 # Show version
 ./nano-web version
+
+# Test serve command
+./nano-web serve ./public --port 8080 --log-format console
 ```
 
 ## 📊 Logging
