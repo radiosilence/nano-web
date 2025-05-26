@@ -42,6 +42,35 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            name: linux-amd64
+          - goos: linux
+            goarch: arm64
+            name: linux-arm64
+          - goos: darwin
+            goarch: amd64
+            name: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            name: darwin-arm64
+          - goos: freebsd
+            goarch: amd64
+            name: freebsd-amd64
+          - goos: openbsd
+            goarch: amd64
+            name: openbsd-amd64
+          - goos: netbsd
+            goarch: amd64
+            name: netbsd-amd64
+          - goos: windows
+            goarch: amd64
+            name: windows-amd64
+            ext: .exe
+
     steps:
       - uses: actions/checkout@v4
 
@@ -58,30 +87,35 @@ jobs:
       - name: 📦 Download dependencies
         run: task deps
 
-      - name: 🏗️ Build all platforms
-        run: task build-all
-
-      - name: 📦 Create archives
+      - name: 🏗️ Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
         run: |
-          cd dist
-          for file in nano-web-*; do
-            if [[ "$file" == *".exe" ]]; then
-              # Windows - create zip
-              zip "${file%.*}.zip" "$file"
-            else
-              # Unix - create tar.gz
-              tar -czf "$file.tar.gz" "$file"
-            fi
-          done
-          ls -la
+          task build
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv nano-web nano-web-${{ matrix.name }}.exe
+          else
+            mv nano-web nano-web-${{ matrix.name }}
+          fi
+
+      - name: 📦 Create tarball (Unix)
+        if: matrix.goos != 'windows'
+        run: |
+          tar -czf nano-web-${{ matrix.name }}.tar.gz nano-web-${{ matrix.name }}
+
+      - name: 📦 Create zip (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          zip nano-web-${{ matrix.name }}.zip nano-web-${{ matrix.name }}${{ matrix.ext }}
 
       - name: ⬆️ Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nano-web-binaries
+          name: nano-web-${{ matrix.name }}
           path: |
-            dist/*.tar.gz
-            dist/*.zip
+            nano-web-${{ matrix.name }}*
 
   release:
     needs: build
@@ -103,8 +137,15 @@ jobs:
       - name: ⬇️ Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: nano-web-binaries
-          path: ./release
+          path: ./artifacts
+
+      - name: 📁 Move artifacts to release directory
+        run: |
+          mkdir -p release
+          find ./artifacts -name "nano-web-*" -type f | while read file; do
+            cp "$file" release/
+          done
+          ls -la release/
 
       - name: 📝 Generate changelog
         id: changelog
