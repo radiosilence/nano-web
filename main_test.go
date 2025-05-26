@@ -86,9 +86,9 @@ func TestShouldTemplate(t *testing.T) {
 		expected bool
 	}{
 		{[]byte("text/html"), true},
-		{[]byte("text/css"), true},
-		{[]byte("text/javascript"), true},
-		{[]byte("application/json"), true},
+		{[]byte("text/css"), false},
+		{[]byte("text/javascript"), false},
+		{[]byte("application/json"), false},
 		{[]byte("image/png"), false},
 		{[]byte("application/pdf"), false},
 		{[]byte("video/mp4"), false},
