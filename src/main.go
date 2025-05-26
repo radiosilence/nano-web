@@ -69,7 +69,7 @@ func getAppEnv(prefix string) map[string]string {
 		if pair := strings.SplitN(e, "=", 2); len(pair) == 2 {
 			key := pair[0]
 			if strings.HasPrefix(key, prefix) {
-				env[key] = pair[1]
+				env[strings.TrimPrefix(key, prefix)] = pair[1]
 			}
 		}
 	}
