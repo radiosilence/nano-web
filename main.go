@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -21,11 +23,64 @@ import (
 
 type Route struct {
 	Content      Content
-	ContentType  string
-	LastModified string
+	ContentType  []byte
+	LastModified []byte
 }
 
-type Routes map[string]Route
+type Content struct {
+	Plain        []byte
+	Gzip         []byte
+	Brotli       []byte
+	PlainLen     int
+	GzipLen      int
+	BrotliLen    int
+}
+
+type Routes struct {
+	sync.RWMutex
+	m map[string]*Route
+}
+
+var (
+	appEnv       map[string]string
+	publicDir    string
+	routes       *Routes
+	logRequests  bool
+	spaMode      bool
+	
+	// Pre-allocated byte slices for common strings
+	healthPath      = []byte("/health")
+	altHealthPath   = []byte("/_health")
+	contentTypeKey  = []byte("Content-Type")
+	serverKey       = []byte("Server")
+	serverValue     = []byte("nano-web")
+	lastModifiedKey = []byte("Last-Modified")
+	acceptEncoding  = []byte("Accept-Encoding")
+	contentEncoding = []byte("Content-Encoding")
+	brEncoding      = []byte("br")
+	gzipEncoding    = []byte("gzip")
+	
+	// Request counter for stats
+	requestCount uint64
+	errorCount   uint64
+	
+	// Buffer pools
+	bufferPool = sync.Pool{
+		New: func() interface{} {
+			return &bytes.Buffer{}
+		},
+	}
+)
+
+func init() {
+	appEnv = getAppEnv()
+	publicDir = getEnv("PUBLIC_DIR", "public")
+	logRequests = getEnv("LOG_REQUESTS", "true") == "true"
+	spaMode = os.Getenv("SPA_MODE") == "1"
+	routes = &Routes{
+		m: make(map[string]*Route),
+	}
+}
 
 func getEnv(name string, fallback string) string {
 	value, exists := os.LookupEnv(name)
@@ -39,80 +94,57 @@ func getAppEnv() map[string]string {
 	prefix := getEnv("CONFIG_PREFIX", "VITE_")
 	appEnv := make(map[string]string)
 	for _, env := range os.Environ() {
-		parts := strings.Split(env, "=")
-		key := parts[0]
-		value := strings.Join(parts[1:], "=")
-		if strings.HasPrefix(key, prefix) {
-			appEnv[strings.Replace(key, prefix, "", 1)] = value
+		if idx := strings.IndexByte(env, '='); idx > 0 {
+			key := env[:idx]
+			value := env[idx+1:]
+			if strings.HasPrefix(key, prefix) {
+				appEnv[key[len(prefix):]] = value
+			}
 		}
 	}
 	return appEnv
 }
 
-var appEnv = getAppEnv()
-var publicDir = getEnv("PUBLIC_DIR", "public")
-var routes Routes = make(map[string]Route)
-var logRequests = getEnv("LOG_REQUESTS", "true") == "true"
+var mimetypes = map[string][]byte{
+	".html": []byte("text/html"),
+	".css":  []byte("text/css"),
+	".js":   []byte("text/javascript"),
+	".json": []byte("application/json"),
+	".xml":  []byte("application/xml"),
+	".pdf":  []byte("application/pdf"),
+	".zip":  []byte("application/zip"),
+	".doc":  []byte("application/msword"),
+	".eot":  []byte("application/vnd.ms-fontobject"),
+	".otf":  []byte("font/otf"),
+	".ttf":  []byte("font/ttf"),
+	".woff": []byte("font/woff"),
+	".woff2":[]byte("font/woff2"),
+	".gif":  []byte("image/gif"),
+	".jpeg": []byte("image/jpeg"),
+	".jpg":  []byte("image/jpeg"),
+	".png":  []byte("image/png"),
+	".svg":  []byte("image/svg+xml"),
+	".ico":  []byte("image/x-icon"),
+	".webp": []byte("image/webp"),
+	".mp4":  []byte("video/mp4"),
+	".webm": []byte("video/webm"),
+	".wav":  []byte("audio/wav"),
+	".mp3":  []byte("audio/mpeg"),
+	".ogg":  []byte("audio/ogg"),
+	".csv":  []byte("text/csv"),
+	".txt":  []byte("text/plain"),
+}
 
-func getMimetype(ext string) string {
-	switch ext {
-	case ".html":
-		return "text/html"
-	case ".css":
-		return "text/css"
-	case ".js":
-		return "text/javascript"
-	case ".json":
-		return "application/json"
-	case ".xml":
-		return "application/xml"
-	case ".pdf":
-		return "application/pdf"
-	case ".zip":
-		return "application/zip"
-	case ".doc":
-		return "application/msword"
-	case ".eot":
-		return "application/vnd.ms-fontobject"
-	case ".otf":
-		return "font/otf"
-	case ".ttf":
-		return "font/ttf"
-	case ".woff":
-		return "font/woff"
-	case ".woff2":
-		return "font/woff2"
-	case ".gif":
-		return "image/gif"
-	case ".jpeg":
-		return "image/jpeg"
-	case ".jpg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".svg":
-		return "image/svg+xml"
-	case ".ico":
-		return "image/x-icon"
-	case ".webp":
-		return "image/webp"
-	case ".mp4":
-		return "video/mp4"
-	case ".webm":
-		return "video/webm"
-	case ".wav":
-		return "audio/wav"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".ogg":
-		return "audio/ogg"
-	case ".csv":
-		return "text/csv"
-	case ".txt":
-		return "text/plain"
-	default:
-		return "application/octet-stream"
+var defaultMimetype = []byte("application/octet-stream")
+
+func getMimetype(path string) []byte {
+	if idx := strings.LastIndexByte(path, '.'); idx > 0 {
+		ext := strings.ToLower(path[idx:])
+		if mimetype, ok := mimetypes[ext]; ok {
+			return mimetype
+		}
 	}
+	return defaultMimetype
 }
 
 type TemplateData struct {
@@ -121,255 +153,291 @@ type TemplateData struct {
 	EscapedJson string            `json:"escapedJson"`
 }
 
-type Content struct {
-	Plain  []byte
-	Gzip   []byte
-	Brotli []byte
-}
-
-func templateRoute(name string, content string) (string, error) {
-	writer := bytes.NewBufferString("")
-	tmpl, err := template.New(name).Parse(content)
+func templateRoute(name string, content []byte) ([]byte, error) {
+	tmpl, err := template.New(name).Parse(string(content))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	
 	jsonString, err := json.Marshal(appEnv)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	err = tmpl.Execute(writer, &TemplateData{
+	
+	buffer := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		buffer.Reset()
+		bufferPool.Put(buffer)
+	}()
+	
+	err = tmpl.Execute(buffer, &TemplateData{
 		Env:         appEnv,
 		Json:        string(jsonString),
 		EscapedJson: strings.Replace(string(jsonString), "\"", "\\\"", -1),
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return writer.String(), nil
+	
+	result := make([]byte, buffer.Len())
+	copy(result, buffer.Bytes())
+	return result, nil
 }
 
-func templateType(mimetype string) bool {
-	switch mimetype {
-	case "text/html", "text/css", "text/javascript", "application/json":
-		return true
-	default:
-		return false
-	}
+func shouldTemplate(mimetype []byte) bool {
+	return bytes.Equal(mimetype, []byte("text/html")) ||
+		bytes.Equal(mimetype, []byte("text/css")) ||
+		bytes.Equal(mimetype, []byte("text/javascript")) ||
+		bytes.Equal(mimetype, []byte("application/json"))
 }
 
-func compressedType(mimetype string) bool {
-	switch mimetype {
-	case "text/html", "text/css", "text/javascript", "application/json":
-		return true
-	default:
-		return false
-	}
+func shouldCompress(mimetype []byte) bool {
+	return shouldTemplate(mimetype)
 }
 
 func gzipData(dat []byte) []byte {
-	var b bytes.Buffer
-	w := gzip.NewWriter(&b)
+	buffer := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		buffer.Reset()
+		bufferPool.Put(buffer)
+	}()
+	
+	w := gzip.NewWriter(buffer)
 	w.Write(dat)
 	w.Close()
-	return b.Bytes()
+	
+	result := make([]byte, buffer.Len())
+	copy(result, buffer.Bytes())
+	return result
 }
 
 func brotliData(dat []byte) []byte {
-	var b bytes.Buffer
-	w := brotli.NewWriter(&b)
+	buffer := bufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		buffer.Reset()
+		bufferPool.Put(buffer)
+	}()
+	
+	w := brotli.NewWriter(buffer)
 	w.Write(dat)
 	w.Close()
-	return b.Bytes()
-
+	
+	result := make([]byte, buffer.Len())
+	copy(result, buffer.Bytes())
+	return result
 }
 
-func makeRoute(path string) (Route, error) {
-	ext := strings.ToLower(path[strings.LastIndex(path, "."):])
-	mimetype := getMimetype(ext)
+func makeRoute(path string) (*Route, error) {
 	dat, err := os.ReadFile(path)
-
 	if err != nil {
-		return Route{}, err
+		return nil, err
 	}
 
 	info, err := os.Stat(path)
-
 	if err != nil {
-		return Route{}, err
+		return nil, err
 	}
 
-	if templateType(mimetype) {
-		content, err := templateRoute(path, string(dat))
+	mimetype := getMimetype(path)
+	
+	if shouldTemplate(mimetype) {
+		dat, err = templateRoute(path, dat)
 		if err != nil {
-			return Route{}, err
+			return nil, err
 		}
-		dat = []byte(content)
-
 	}
 
 	content := Content{
-		Plain: dat,
+		Plain:    dat,
+		PlainLen: len(dat),
 	}
 
-	if compressedType(mimetype) {
+	if shouldCompress(mimetype) {
 		content.Gzip = gzipData(dat)
+		content.GzipLen = len(content.Gzip)
 		content.Brotli = brotliData(dat)
+		content.BrotliLen = len(content.Brotli)
 	}
 
-	return Route{
+	lastModified := info.ModTime().Format(http.TimeFormat)
+	
+	return &Route{
 		Content:      content,
 		ContentType:  mimetype,
-		LastModified: info.ModTime().Format(http.TimeFormat),
+		LastModified: []byte(lastModified),
 	}, nil
 }
 
-// Walk the public dir and create routes for each file
-func populateRoutes(routes Routes) {
+func populateRoutes() {
 	_, err := os.Stat(publicDir)
 	if err != nil {
-		cwd, err := os.Getwd()
-		if err != nil {
-			log.Fatal().Err(err).Msg("error getting current working directory")
-		}
+		cwd, _ := os.Getwd()
 		log.Fatal().Str("cwd", cwd).Msg("public directory not found")
 	}
 
 	routeCount := 0
-	filepath.Walk("public", func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(publicDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
-		urlPath := strings.Replace(path, "public", "", 1)
-
+		
+		urlPath := strings.Replace(path, publicDir, "", 1)
+		
 		route, err := makeRoute(path)
-
 		if err != nil {
 			log.Error().Err(err).Str("url_path", urlPath).Str("file_path", path).Msg("error making route")
 			return nil
 		}
 
-		routes[urlPath] = route
+		routes.Lock()
+		routes.m[urlPath] = route
 		routeCount++
-
+		
 		if info.Name() == "index.html" {
 			indexUrlPath := strings.Replace(urlPath, "/index.html", "", 1)
 			if indexUrlPath == "" {
 				indexUrlPath = "/"
 			}
 			log.Debug().Str("index_path", indexUrlPath).Str("file_path", path).Msg("adding index route")
-			routes[indexUrlPath] = route
-			routes[indexUrlPath+"/"] = route
+			routes.m[indexUrlPath] = route
+			routes.m[indexUrlPath+"/"] = route
 			routeCount += 2
 		}
+		routes.Unlock()
+		
 		log.Debug().Str("url_path", urlPath).Str("file_path", path).Msg("adding route")
-
 		return nil
 	})
 
 	log.Info().Int("route_count", routeCount).Msg("routes populated successfully")
 }
 
-func getAcceptedEncoding(ctx *fasthttp.RequestCtx) string {
-	acceptEncoding := string(ctx.Request.Header.Peek("Accept-Encoding"))
-	if strings.Contains(acceptEncoding, "br") {
-		return "br"
-	}
-	if strings.Contains(acceptEncoding, "gzip") {
-		return "gzip"
-	}
-	return ""
+func getRoute(path string) (*Route, bool) {
+	routes.RLock()
+	route, exists := routes.m[path]
+	routes.RUnlock()
+	return route, exists
 }
 
-func getEncodedContent(acceptedEncoding string, content Content) (string, []byte) {
-	switch acceptedEncoding {
-	case "br":
-		if content.Brotli != nil {
-			return "br", content.Brotli
-		} else {
-			return "", content.Plain
-		}
-	case "gzip":
-		if content.Gzip != nil {
-			return "gzip", content.Gzip
-		} else {
-			return "", content.Plain
-		}
-	default:
-		return "", content.Plain
+func getAcceptedEncoding(ctx *fasthttp.RequestCtx) int {
+	acceptHeader := ctx.Request.Header.Peek("Accept-Encoding")
+	
+	// Check for br first as it's usually better compression
+	if bytes.Contains(acceptHeader, brEncoding) {
+		return 2 // br
 	}
+	if bytes.Contains(acceptHeader, gzipEncoding) {
+		return 1 // gzip
+	}
+	return 0 // none
 }
 
 func healthCheckHandler(ctx *fasthttp.RequestCtx) {
-	ctx.Response.Header.Set("Content-Type", "application/json")
-	ctx.Response.Header.Set("Server", "nano-web")
+	ctx.Response.Header.SetBytesKV(contentTypeKey, []byte("application/json"))
+	ctx.Response.Header.SetBytesKV(serverKey, serverValue)
 	ctx.SetStatusCode(fasthttp.StatusOK)
-	fmt.Fprintf(ctx, `{"status":"healthy","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(ctx, `{"status":"healthy","timestamp":"%s","requests":%d,"errors":%d}`, 
+		time.Now().UTC().Format(time.RFC3339),
+		atomic.LoadUint64(&requestCount),
+		atomic.LoadUint64(&errorCount))
 }
 
 func handler(ctx *fasthttp.RequestCtx) {
+	atomic.AddUint64(&requestCount, 1)
+	
 	start := time.Now()
-	path := string(ctx.Path())
-	method := string(ctx.Method())
-	userAgent := string(ctx.UserAgent())
-
-	// Handle health check endpoint
-	if path == "/health" || path == "/_health" {
+	path := ctx.Path()
+	
+	// Fast path for health checks
+	if bytes.Equal(path, healthPath) || bytes.Equal(path, altHealthPath) {
 		healthCheckHandler(ctx)
 		return
 	}
-
-	route, exists := routes[path]
+	
+	pathStr := string(path)
+	route, exists := getRoute(pathStr)
+	
 	if !exists {
-		if os.Getenv("SPA_MODE") == "1" {
-			route, exists = routes["/"]
+		if spaMode {
+			route, exists = getRoute("/")
 			if !exists {
+				atomic.AddUint64(&errorCount, 1)
 				duration := time.Since(start)
 				if logRequests {
 					log.Warn().
-						Str("method", method).
-						Str("path", path).
-						Str("user_agent", userAgent).
+						Str("method", string(ctx.Method())).
+						Str("path", pathStr).
+						Str("user_agent", string(ctx.UserAgent())).
 						Int("status", fasthttp.StatusNotFound).
 						Dur("duration_ms", duration).
 						Msg("request not found")
 				}
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
+				ctx.Response.Header.SetBytesKV(serverKey, serverValue)
 				return
 			}
 		} else {
+			atomic.AddUint64(&errorCount, 1)
 			duration := time.Since(start)
 			if logRequests {
 				log.Warn().
-					Str("method", method).
-					Str("path", path).
-					Str("user_agent", userAgent).
+					Str("method", string(ctx.Method())).
+					Str("path", pathStr).
+					Str("user_agent", string(ctx.UserAgent())).
 					Int("status", fasthttp.StatusNotFound).
 					Dur("duration_ms", duration).
 					Msg("request not found")
 			}
 			ctx.Error("Not Found", fasthttp.StatusNotFound)
+			ctx.Response.Header.SetBytesKV(serverKey, serverValue)
 			return
 		}
 	}
 
-	ctx.Response.Header.Set("Content-Type", route.ContentType)
-	ctx.Response.Header.Set("Server", "nano-web")
-	ctx.Response.Header.Set("Last-Modified", route.LastModified)
-	acceptedEncoding := getAcceptedEncoding(ctx)
-	encoding, content := getEncodedContent(acceptedEncoding, route.Content)
-	if encoding != "" {
-		ctx.Response.Header.Set("Content-Encoding", encoding)
+	// Set headers efficiently
+	ctx.Response.Header.SetBytesKV(contentTypeKey, route.ContentType)
+	ctx.Response.Header.SetBytesKV(serverKey, serverValue)
+	ctx.Response.Header.SetBytesKV(lastModifiedKey, route.LastModified)
+	
+	// Get content based on encoding
+	encoding := getAcceptedEncoding(ctx)
+	var content []byte
+	var encodingHeader []byte
+	
+	switch encoding {
+	case 2: // br
+		if route.Content.BrotliLen > 0 {
+			content = route.Content.Brotli
+			encodingHeader = brEncoding
+		} else {
+			content = route.Content.Plain
+		}
+	case 1: // gzip
+		if route.Content.GzipLen > 0 {
+			content = route.Content.Gzip
+			encodingHeader = gzipEncoding
+		} else {
+			content = route.Content.Plain
+		}
+	default:
+		content = route.Content.Plain
 	}
-	fmt.Fprintf(ctx, "%s", content)
+	
+	if encodingHeader != nil {
+		ctx.Response.Header.SetBytesKV(contentEncoding, encodingHeader)
+	}
+	
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.Response.SetBody(content)
 
-	duration := time.Since(start)
 	if logRequests {
+		duration := time.Since(start)
 		log.Info().
-			Str("method", method).
-			Str("path", path).
-			Str("user_agent", userAgent).
-			Str("content_type", route.ContentType).
-			Str("encoding", encoding).
+			Str("method", string(ctx.Method())).
+			Str("path", pathStr).
+			Str("user_agent", string(ctx.UserAgent())).
+			Str("content_type", string(route.ContentType)).
+			Str("encoding", string(encodingHeader)).
 			Int("status", fasthttp.StatusOK).
 			Int("content_length", len(content)).
 			Dur("duration_ms", duration).
@@ -378,24 +446,19 @@ func handler(ctx *fasthttp.RequestCtx) {
 }
 
 func main() {
-	// Parse command line flags
 	var healthCheck bool
 	flag.BoolVar(&healthCheck, "health-check", false, "Perform health check and exit")
 	flag.Parse()
 
-	// Handle health check command
 	if healthCheck {
-		// Simple health check - just verify we can start
 		log.Info().Msg("Health check passed")
 		os.Exit(0)
 	}
 
 	// Configure logger
 	if getEnv("LOG_FORMAT", "json") == "json" {
-		// JSON logging for production
 		log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 	} else {
-		// Pretty logging for development
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
 	}
 
@@ -419,15 +482,36 @@ func main() {
 		Str("version", "nano-web").
 		Str("port", getEnv("PORT", "80")).
 		Str("public_dir", publicDir).
-		Bool("spa_mode", os.Getenv("SPA_MODE") == "1").
+		Bool("spa_mode", spaMode).
 		Bool("log_requests", logRequests).
 		Str("config_prefix", getEnv("CONFIG_PREFIX", "VITE_")).
 		Msg("starting nano-web server")
 
-	populateRoutes(routes)
+	populateRoutes()
+	
+	// Configure server for maximum performance
+	server := &fasthttp.Server{
+		Handler:                       handler,
+		Name:                         "nano-web",
+		ReadBufferSize:               16 * 1024, // 16KB
+		WriteBufferSize:              16 * 1024, // 16KB
+		MaxConnsPerIP:                1000,
+		MaxRequestsPerConn:           1000,
+		MaxRequestBodySize:           1 * 1024 * 1024, // 1MB
+		DisableKeepalive:             false,
+		TCPKeepalive:                 true,
+		TCPKeepalivePeriod:           30 * time.Second,
+		ReduceMemoryUsage:            false, // Keep false for performance
+		GetOnly:                      true,  // Only serve GET requests
+		DisablePreParseMultipartForm: true,
+		LogAllErrors:                 false,
+		DisableHeaderNamesNormalizing: true, // Performance optimization
+		NoDefaultServerHeader:        true,
+		StreamRequestBody:            false,
+	}
 
 	log.Info().Str("addr", addr).Msg("server listening")
-	if err := fasthttp.ListenAndServe(addr, handler); err != nil {
+	if err := server.ListenAndServe(addr); err != nil {
 		log.Fatal().Err(err).Msg("server failed to start")
 	}
 }

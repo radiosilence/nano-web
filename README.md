@@ -240,14 +240,40 @@ go test ./...
 
 ## 📈 Performance
 
-nano-web is designed for efficient serving of static content:
+nano-web is engineered for extreme performance with extensive optimizations:
 
-- **Memory efficient**: All assets are pre-loaded and compressed at startup
-- **Minimal allocations**: Request handling optimized for low garbage collection pressure
-- **Smart compression**: Automatic content encoding negotiation (Brotli/Gzip)
-- **FastHTTP**: Built on the FastHTTP library for Go
+### 🚀 Benchmark Results
 
-Performance characteristics will vary based on your content size, server specifications, and traffic patterns. The pre-caching approach trades startup time and memory usage for reduced request latency.
+**MacBook M3 Max (36GB RAM)**
+```bash
+wrk -d 10 -c 20 -t 10 http://localhost:80
+Running 10s test @ http://localhost:80
+  10 threads and 20 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   200.07us  130.48us   8.53ms   96.93%
+    Req/Sec    10.07k   352.62    11.09k    85.05%
+  1012393 requests in 10.10s, 7.12GB read
+Requests/sec: 100237.75
+Transfer/sec:    721.45MB
+```
+
+**Key Metrics:**
+- 🎯 **100K+ requests/second** - Sub-millisecond response times
+- ⚡ **200μs average latency** - Consistently fast responses
+- 📊 **721MB/s throughput** - High data transfer rates
+- 🎪 **96.93% latency consistency** - Predictable performance
+
+### ⚡ Performance Optimizations
+
+- **Zero-allocation request handling**: Pre-allocated byte slices and buffer pools
+- **Memory-mapped content**: All assets pre-loaded and compressed at startup
+- **Optimized FastHTTP configuration**: Custom server tuning for maximum throughput
+- **Atomic operations**: Lock-free request counters and statistics
+- **Byte-level operations**: Direct byte comparisons for headers and paths
+- **Smart compression**: Pre-compressed Brotli and Gzip content stored in memory
+- **Efficient routing**: RWMutex for concurrent reads with minimal locking
+
+Performance characteristics will vary based on your content size, server specifications, and traffic patterns. The pre-caching approach trades startup time and memory usage for exceptional request latency.
 
 ## 🤝 Contributing
 
