@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 env:
   PKGOS: linux
@@ -56,10 +56,14 @@ tasks:
 
   test:
     desc: "🧪 Run tests"
+    env:
+      CGO_ENABLED: 1
     cmd: go test -v -race ./...
 
   test-coverage:
     desc: "📊 Run tests with coverage"
+    env:
+      CGO_ENABLED: 1
     cmds:
       - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
       - go tool cover -html=coverage.out -o coverage.html
@@ -67,6 +71,8 @@ tasks:
 
   bench:
     desc: "🔥 Run benchmarks"
+    env:
+      CGO_ENABLED: 1
     cmd: go test -bench=. -benchmem -count=3 ./...
 
   lint:
@@ -235,7 +241,7 @@ tasks:
     preconditions:
       - sh: '[ -n "{{.TAG}}" ]'
         msg: "Please provide a tag: task tag -- v1.0.1 or task tag -- 1.0.1"
-      - sh: 'git diff --quiet'
+      - sh: "git diff --quiet"
         msg: "Working directory must be clean before tagging"
     cmds:
       - echo "{{.TAG_VERSION}}" > VERSION
