@@ -39,16 +39,18 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: 📦 Download dependencies
-        run: go mod download
+        run: task deps
 
-      - name: 🔍 Verify dependencies
-        run: go mod verify
+      - name: 🔧 Set up Task
+        uses: arduino/setup-task@v1
+        with:
+          version: 3.x
 
       - name: 🏗️ Build
-        run: go build -v ./...
+        run: task build
 
       - name: 🧪 Run tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: task test-coverage
 
       - name: 📊 Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.24'

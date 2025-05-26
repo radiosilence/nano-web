@@ -401,13 +401,13 @@ git clone https://github.com/radiosilence/nano-web.git
 cd nano-web
 
 # Install dependencies
-go mod download
+task deps
 
 # Run in development mode
-LOG_FORMAT=console LOG_LEVEL=debug go run main.go
+task dev
 
 # Run tests
-go test -v ./...
+task test
 ```
 
 ## 📄 License

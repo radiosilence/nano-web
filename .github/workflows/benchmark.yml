@@ -31,5 +31,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-benchmark-
 
+      - name: 🔧 Set up Task
+        uses: arduino/setup-task@v1
+        with:
+          version: 3.x
+
+      - name: 📦 Download dependencies
+        run: task deps
+
       - name: 🚀 Run benchmarks
-        run: go test -bench=. -benchmem -count=3 ./...
+        run: task bench
