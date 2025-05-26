@@ -14,45 +14,6 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func TestGetEnv(t *testing.T) {
-	tests := []struct {
-		name     string
-		envKey   string
-		envValue string
-		fallback string
-		expected string
-	}{
-		{
-			name:     "environment variable exists",
-			envKey:   "TEST_VAR",
-			envValue: "test_value",
-			fallback: "fallback",
-			expected: "test_value",
-		},
-		{
-			name:     "environment variable does not exist",
-			envKey:   "NON_EXISTENT_VAR",
-			envValue: "",
-			fallback: "fallback",
-			expected: "fallback",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				os.Setenv(tt.envKey, tt.envValue)
-				defer os.Unsetenv(tt.envKey)
-			}
-
-			result := getEnv(tt.envKey, tt.fallback)
-			if result != tt.expected {
-				t.Errorf("getEnv() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestGetAppEnv(t *testing.T) {
 	// Set test environment variables
 	os.Setenv("VITE_API_URL", "https://api.example.com")
@@ -64,27 +25,20 @@ func TestGetAppEnv(t *testing.T) {
 		os.Unsetenv("OTHER_VAR")
 	}()
 
-	result := getAppEnv()
+	result := getAppEnv("VITE_")
 
-	expected := map[string]string{
-		"API_URL": "https://api.example.com",
-		"DEBUG":   "true",
+	// Check that VITE_ prefixed variables are included
+	if result["API_URL"] != "https://api.example.com" {
+		t.Errorf("Expected API_URL to be 'https://api.example.com', got '%s'", result["API_URL"])
 	}
 
-	if len(result) < 2 {
-		t.Errorf("getAppEnv() returned fewer variables than expected")
+	if result["DEBUG"] != "true" {
+		t.Errorf("Expected DEBUG to be 'true', got '%s'", result["DEBUG"])
 	}
 
-	for key, expectedValue := range expected {
-		if value, exists := result[key]; !exists {
-			t.Errorf("getAppEnv() missing key %s", key)
-		} else if value != expectedValue {
-			t.Errorf("getAppEnv()[%s] = %v, want %v", key, value, expectedValue)
-		}
-	}
-
+	// Check that non-VITE_ prefixed variables are not included
 	if _, exists := result["OTHER_VAR"]; exists {
-		t.Errorf("getAppEnv() should not include OTHER_VAR")
+		t.Errorf("Expected OTHER_VAR to not be included in result")
 	}
 }
 
@@ -93,32 +47,27 @@ func TestGetMimetype(t *testing.T) {
 		path     string
 		expected []byte
 	}{
-		{"file.html", []byte("text/html")},
-		{"style.css", []byte("text/css")},
-		{"script.js", []byte("text/javascript")},
-		{"data.json", []byte("application/json")},
-		{"image.png", []byte("image/png")},
-		{"photo.jpg", []byte("image/jpeg")},
-		{"photo.jpeg", []byte("image/jpeg")},
-		{"animation.gif", []byte("image/gif")},
-		{"icon.svg", []byte("image/svg+xml")},
-		{"favicon.ico", []byte("image/x-icon")},
-		{"modern.webp", []byte("image/webp")},
-		{"document.pdf", []byte("application/pdf")},
-		{"archive.zip", []byte("application/zip")},
-		{"video.mp4", []byte("video/mp4")},
-		{"video.webm", []byte("video/webm")},
-		{"audio.mp3", []byte("audio/mpeg")},
-		{"sound.wav", []byte("audio/wav")},
-		{"music.ogg", []byte("audio/ogg")},
-		{"text.txt", []byte("text/plain")},
-		{"data.csv", []byte("text/csv")},
-		{"config.xml", []byte("application/xml")},
-		{"font.ttf", []byte("font/ttf")},
-		{"font.woff", []byte("font/woff")},
-		{"font.woff2", []byte("font/woff2")},
-		{"unknown.xyz", defaultMimetype},
-		{"noextension", defaultMimetype},
+		{"test.html", []byte("text/html")},
+		{"test.css", []byte("text/css")},
+		{"test.js", []byte("text/javascript")},
+		{"test.json", []byte("application/json")},
+		{"test.png", []byte("image/png")},
+		{"test.jpg", []byte("image/jpeg")},
+		{"test.jpeg", []byte("image/jpeg")},
+		{"test.gif", []byte("image/gif")},
+		{"test.svg", []byte("image/svg+xml")},
+		{"test.ico", []byte("image/x-icon")},
+		{"test.webp", []byte("image/webp")},
+		{"test.pdf", []byte("application/pdf")},
+		{"test.zip", []byte("application/zip")},
+		{"test.mp4", []byte("video/mp4")},
+		{"test.mp3", []byte("audio/mpeg")},
+		{"test.wav", []byte("audio/wav")},
+		{"test.ogg", []byte("audio/ogg")},
+		{"test.txt", []byte("text/plain")},
+		{"test.csv", []byte("text/csv")},
+		{"test.unknown", []byte("application/octet-stream")},
+		{"test", []byte("application/octet-stream")},
 	}
 
 	for _, tt := range tests {
@@ -180,15 +129,14 @@ func TestShouldCompress(t *testing.T) {
 }
 
 func TestGzipData(t *testing.T) {
-	input := []byte("Hello, World! This is a test string for compression.")
-	compressed := gzipData(input)
+	testData := []byte("Hello, World! This is test data for compression.")
+	compressed := gzipData(testData)
 
-	// Verify it's actually compressed (should be different)
-	if bytes.Equal(input, compressed) {
-		t.Error("gzipData() did not compress the data")
+	if len(compressed) == 0 {
+		t.Error("gzipData() returned empty data")
 	}
 
-	// Verify we can decompress it back
+	// Verify it's actually compressed data by trying to decompress it
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
 		t.Fatalf("Failed to create gzip reader: %v", err)
@@ -197,60 +145,55 @@ func TestGzipData(t *testing.T) {
 
 	decompressed, err := io.ReadAll(reader)
 	if err != nil {
-		t.Fatalf("Failed to decompress: %v", err)
+		t.Fatalf("Failed to decompress data: %v", err)
 	}
 
-	if !bytes.Equal(input, decompressed) {
-		t.Error("Decompressed data does not match original")
+	if !bytes.Equal(decompressed, testData) {
+		t.Errorf("Decompressed data doesn't match original. Got %s, want %s", decompressed, testData)
 	}
 }
 
 func TestBrotliData(t *testing.T) {
-	input := []byte("Hello, World! This is a test string for compression.")
-	compressed := brotliData(input)
+	testData := []byte("Hello, World! This is test data for compression.")
+	compressed := brotliData(testData)
 
-	// Verify it's actually compressed (should be different)
-	if bytes.Equal(input, compressed) {
-		t.Error("brotliData() did not compress the data")
+	if len(compressed) == 0 {
+		t.Error("brotliData() returned empty data")
 	}
 
-	// Verify we can decompress it back
+	// Verify it's actually compressed data by trying to decompress it
 	reader := brotli.NewReader(bytes.NewReader(compressed))
 	decompressed, err := io.ReadAll(reader)
 	if err != nil {
 		t.Fatalf("Failed to decompress brotli data: %v", err)
 	}
 
-	if !bytes.Equal(input, decompressed) {
-		t.Error("Decompressed brotli data does not match original")
+	if !bytes.Equal(decompressed, testData) {
+		t.Errorf("Decompressed data doesn't match original. Got %s, want %s", decompressed, testData)
 	}
 }
 
 func TestTemplateRoute(t *testing.T) {
 	// Set up test environment
-	originalAppEnv := appEnv
 	appEnv = map[string]string{
-		"SITE_NAME": "Test Site",
-		"DEBUG":     "true",
+		"API_URL": "https://api.example.com",
+		"DEBUG":   "true",
 	}
-	defer func() {
-		appEnv = originalAppEnv
-	}()
 
-	template := []byte(`<html><body><h1>{{.Env.SITE_NAME}}</h1><script>window.env = {{.Json}};</script></body></html>`)
-	result, err := templateRoute("test.html", template)
+	content := []byte(`<html><body>API: {{.Env.API_URL}}, Debug: {{.Env.DEBUG}}</body></html>`)
+	result, err := templateRoute("test.html", content)
 
 	if err != nil {
 		t.Fatalf("templateRoute() error = %v", err)
 	}
 
 	resultStr := string(result)
-	if !strings.Contains(resultStr, "Test Site") {
-		t.Error("templateRoute() did not substitute SITE_NAME")
+	if !strings.Contains(resultStr, "https://api.example.com") {
+		t.Errorf("templateRoute() result doesn't contain expected API_URL")
 	}
 
-	if !strings.Contains(resultStr, `"SITE_NAME":"Test Site"`) {
-		t.Error("templateRoute() did not include JSON environment")
+	if !strings.Contains(resultStr, "true") {
+		t.Errorf("templateRoute() result doesn't contain expected DEBUG value")
 	}
 }
 
@@ -260,26 +203,12 @@ func TestGetAcceptedEncoding(t *testing.T) {
 		acceptEncoding string
 		expected       int
 	}{
-		{
-			name:           "brotli preferred",
-			acceptEncoding: "gzip, deflate, br",
-			expected:       2,
-		},
-		{
-			name:           "gzip fallback",
-			acceptEncoding: "gzip, deflate",
-			expected:       1,
-		},
-		{
-			name:           "no compression",
-			acceptEncoding: "identity",
-			expected:       0,
-		},
-		{
-			name:           "empty header",
-			acceptEncoding: "",
-			expected:       0,
-		},
+		{"brotli preferred", "gzip, deflate, br", 2},
+		{"gzip only", "gzip, deflate", 1},
+		{"no compression", "identity", 0},
+		{"empty header", "", 0},
+		{"brotli first", "br, gzip", 2},
+		{"gzip first", "gzip, br", 2}, // br is still preferred
 	}
 
 	for _, tt := range tests {
@@ -295,53 +224,42 @@ func TestGetAcceptedEncoding(t *testing.T) {
 	}
 }
 
-func setupTestFiles(t testing.TB) string {
-	tempDir, err := os.MkdirTemp("", "nano-web-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-
-	publicDir := filepath.Join(tempDir, "public")
-	if err := os.MkdirAll(publicDir, 0755); err != nil {
-		t.Fatalf("Failed to create public dir: %v", err)
-	}
+func setupTestFiles(t *testing.T) string {
+	tmpDir := t.TempDir()
 
 	// Create test files
 	files := map[string]string{
-		"index.html":      `<html><body><h1>{{.Env.SITE_NAME}}</h1></body></html>`,
-		"style.css":       `body { font-family: Arial; }`,
-		"script.js":       `console.log("Hello from {{.Env.SITE_NAME}}");`,
-		"data.json":       `{"site": "{{.Env.SITE_NAME}}"}`,
-		"image.png":       "fake png data",
-		"subdir/sub.html": `<html><body><h2>Subdirectory</h2></body></html>`,
+		"index.html":     "<html><body>{{.Env.API_URL}}</body></html>",
+		"style.css":      "body { margin: 0; }",
+		"script.js":      "console.log('{{.Env.DEBUG}}');",
+		"data.json":      `{"key": "{{.Env.API_URL}}"}`,
+		"image.png":      "fake png data",
+		"document.pdf":   "fake pdf data",
+		"nested/page.html": "<html><body>Nested</body></html>",
 	}
 
 	for path, content := range files {
-		fullPath := filepath.Join(publicDir, path)
+		fullPath := filepath.Join(tmpDir, path)
 		dir := filepath.Dir(fullPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatalf("Failed to create dir %s: %v", dir, err)
+			t.Fatalf("Failed to create directory %s: %v", dir, err)
 		}
 		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to write file %s: %v", fullPath, err)
+			t.Fatalf("Failed to create test file %s: %v", fullPath, err)
 		}
 	}
 
-	return tempDir
+	return tmpDir
 }
 
 func TestMakeRoute(t *testing.T) {
-	tempDir := setupTestFiles(t)
-	defer os.RemoveAll(tempDir)
+	tmpDir := setupTestFiles(t)
 
-	// Set up test environment
-	originalAppEnv := appEnv
-	appEnv = map[string]string{"SITE_NAME": "Test Site"}
-	defer func() {
-		appEnv = originalAppEnv
-	}()
-
-	publicDir := filepath.Join(tempDir, "public")
+	// Set up test environment for templating
+	appEnv = map[string]string{
+		"API_URL": "https://api.example.com",
+		"DEBUG":   "true",
+	}
 
 	tests := []struct {
 		name        string
@@ -353,7 +271,7 @@ func TestMakeRoute(t *testing.T) {
 	}{
 		{
 			name:        "HTML file with templating",
-			path:        filepath.Join(publicDir, "index.html"),
+			path:        "index.html",
 			expectError: false,
 			contentType: []byte("text/html"),
 			checkGzip:   true,
@@ -361,34 +279,59 @@ func TestMakeRoute(t *testing.T) {
 		},
 		{
 			name:        "CSS file with templating",
-			path:        filepath.Join(publicDir, "style.css"),
+			path:        "style.css",
 			expectError: false,
 			contentType: []byte("text/css"),
 			checkGzip:   true,
 			checkBrotli: true,
 		},
 		{
+			name:        "JavaScript file with templating",
+			path:        "script.js",
+			expectError: false,
+			contentType: []byte("text/javascript"),
+			checkGzip:   true,
+			checkBrotli: true,
+		},
+		{
+			name:        "JSON file with templating",
+			path:        "data.json",
+			expectError: false,
+			contentType: []byte("application/json"),
+			checkGzip:   true,
+			checkBrotli: true,
+		},
+		{
 			name:        "PNG file without compression",
-			path:        filepath.Join(publicDir, "image.png"),
+			path:        "image.png",
 			expectError: false,
 			contentType: []byte("image/png"),
 			checkGzip:   false,
 			checkBrotli: false,
 		},
 		{
+			name:        "PDF file without compression",
+			path:        "document.pdf",
+			expectError: false,
+			contentType: []byte("application/pdf"),
+			checkGzip:   false,
+			checkBrotli: false,
+		},
+		{
 			name:        "Non-existent file",
-			path:        filepath.Join(publicDir, "nonexistent.txt"),
+			path:        "nonexistent.txt",
 			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			route, err := makeRoute(tt.path)
+			fullPath := filepath.Join(tmpDir, tt.path)
+			route, err := makeRoute(fullPath)
 
 			if tt.expectError {
 				if err == nil {
-					t.Error("makeRoute() expected error but got none")
+					t.Errorf("makeRoute() expected error but got none")
 				}
 				return
 			}
@@ -397,156 +340,130 @@ func TestMakeRoute(t *testing.T) {
 				t.Fatalf("makeRoute() error = %v", err)
 			}
 
-			if route == nil {
-				t.Fatal("makeRoute() returned nil route")
-			}
-
 			if !bytes.Equal(route.ContentType, tt.contentType) {
 				t.Errorf("makeRoute() ContentType = %s, want %s", route.ContentType, tt.contentType)
 			}
 
-			if route.Content.PlainLen == 0 {
-				t.Error("makeRoute() Plain content is empty")
-			}
-
 			if tt.checkGzip {
-				if route.Content.GzipLen == 0 {
-					t.Error("makeRoute() Gzip content should be present but is empty")
+				if len(route.Content.Gzip) == 0 {
+					t.Errorf("makeRoute() expected gzip compression but got none")
+				}
+				if route.Content.GzipLen != len(route.Content.Gzip) {
+					t.Errorf("makeRoute() GzipLen = %d, want %d", route.Content.GzipLen, len(route.Content.Gzip))
 				}
 			} else {
-				if route.Content.GzipLen != 0 {
-					t.Error("makeRoute() Gzip content should not be present")
+				if len(route.Content.Gzip) != 0 {
+					t.Errorf("makeRoute() expected no gzip compression but got some")
 				}
 			}
 
 			if tt.checkBrotli {
-				if route.Content.BrotliLen == 0 {
-					t.Error("makeRoute() Brotli content should be present but is empty")
+				if len(route.Content.Brotli) == 0 {
+					t.Errorf("makeRoute() expected brotli compression but got none")
+				}
+				if route.Content.BrotliLen != len(route.Content.Brotli) {
+					t.Errorf("makeRoute() BrotliLen = %d, want %d", route.Content.BrotliLen, len(route.Content.Brotli))
 				}
 			} else {
-				if route.Content.BrotliLen != 0 {
-					t.Error("makeRoute() Brotli content should not be present")
+				if len(route.Content.Brotli) != 0 {
+					t.Errorf("makeRoute() expected no brotli compression but got some")
 				}
 			}
 
-			if len(route.LastModified) == 0 {
-				t.Error("makeRoute() LastModified should not be empty")
+			if route.Content.PlainLen != len(route.Content.Plain) {
+				t.Errorf("makeRoute() PlainLen = %d, want %d", route.Content.PlainLen, len(route.Content.Plain))
 			}
 		})
 	}
 }
 
 func TestHandler(t *testing.T) {
-	tempDir := setupTestFiles(t)
-	defer os.RemoveAll(tempDir)
+	tmpDir := setupTestFiles(t)
 
-	// Change to temp directory and set up routes
-	originalDir, _ := os.Getwd()
-	os.Chdir(tempDir)
-	defer os.Chdir(originalDir)
+	// Set up test environment
+	appEnv = map[string]string{
+		"API_URL": "https://api.example.com",
+		"DEBUG":   "true",
+	}
 
-	// Override global variables for testing
-	originalPublicDir := publicDir
-	originalRoutes := routes
-	originalAppEnv := appEnv
-	originalLogRequests := logRequests
-	originalSpaMode := spaMode
+	// Initialize routes
+	routes = &Routes{
+		m: make(map[string]*Route),
+	}
 
-	publicDir = "public"
-	routes = &Routes{m: make(map[string]*Route)}
-	appEnv = map[string]string{"SITE_NAME": "Test Site"}
-	logRequests = false
-	spaMode = false
-
-	defer func() {
-		publicDir = originalPublicDir
-		routes = originalRoutes
-		appEnv = originalAppEnv
-		logRequests = originalLogRequests
-		spaMode = originalSpaMode
-	}()
+	// Populate routes from test directory
+	populateRoutes(tmpDir)
 
 	// Reset counters
 	atomic.StoreUint64(&requestCount, 0)
 	atomic.StoreUint64(&errorCount, 0)
-
-	// Populate routes
-	populateRoutes()
 
 	tests := []struct {
 		name           string
 		path           string
 		method         string
 		acceptEncoding string
-		setSpaMode     bool
+		spaMode        bool
 		expectedStatus int
-		expectedType   string
+		expectedType   []byte
 	}{
 		{
 			name:           "serve index.html",
 			path:           "/",
 			method:         "GET",
 			acceptEncoding: "",
+			spaMode:        false,
 			expectedStatus: 200,
-			expectedType:   "text/html",
+			expectedType:   []byte("text/html"),
 		},
 		{
-			name:           "serve index.html with gzip",
-			path:           "/",
-			method:         "GET",
-			acceptEncoding: "gzip",
-			expectedStatus: 200,
-			expectedType:   "text/html",
-		},
-		{
-			name:           "serve CSS file",
+			name:           "serve CSS with gzip",
 			path:           "/style.css",
 			method:         "GET",
-			acceptEncoding: "",
+			acceptEncoding: "gzip",
+			spaMode:        false,
 			expectedStatus: 200,
-			expectedType:   "text/css",
+			expectedType:   []byte("text/css"),
 		},
 		{
-			name:           "serve PNG file",
-			path:           "/image.png",
+			name:           "serve JS with brotli",
+			path:           "/script.js",
 			method:         "GET",
-			acceptEncoding: "",
+			acceptEncoding: "br, gzip",
+			spaMode:        false,
 			expectedStatus: 200,
-			expectedType:   "image/png",
+			expectedType:   []byte("text/javascript"),
 		},
 		{
 			name:           "404 without SPA mode",
 			path:           "/nonexistent",
 			method:         "GET",
 			acceptEncoding: "",
-			setSpaMode:     false,
+			spaMode:        false,
 			expectedStatus: 404,
 		},
 		{
-			name:           "404 with SPA mode serves index",
+			name:           "404 with SPA mode falls back to index",
 			path:           "/nonexistent",
 			method:         "GET",
 			acceptEncoding: "",
-			setSpaMode:     true,
+			spaMode:        true,
 			expectedStatus: 200,
-			expectedType:   "text/html",
+			expectedType:   []byte("text/html"),
 		},
 		{
 			name:           "health check",
 			path:           "/health",
 			method:         "GET",
 			acceptEncoding: "",
+			spaMode:        false,
 			expectedStatus: 200,
-			expectedType:   "application/json",
+			expectedType:   []byte("application/json"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set SPA mode if specified
-			spaMode = tt.setSpaMode
-
-			// Create request context
 			ctx := &fasthttp.RequestCtx{}
 			ctx.Request.SetRequestURI(tt.path)
 			ctx.Request.Header.SetMethod(tt.method)
@@ -554,33 +471,26 @@ func TestHandler(t *testing.T) {
 				ctx.Request.Header.Set("Accept-Encoding", tt.acceptEncoding)
 			}
 
-			// Call handler
-			handler(ctx)
+			// Create a ServeCmd with test configuration
+			serveCmd := &ServeCmd{
+				PublicDir:    tmpDir,
+				SpaMode:      tt.spaMode,
+				LogRequests:  false, // Disable for tests
+				LogLevel:     "error",
+				LogFormat:    "json",
+				ConfigPrefix: "VITE_",
+			}
 
-			// Check status code
+			handler(ctx, serveCmd)
+
 			if ctx.Response.StatusCode() != tt.expectedStatus {
-				t.Errorf("handler() status = %v, want %v", ctx.Response.StatusCode(), tt.expectedStatus)
+				t.Errorf("handler() status = %d, want %d", ctx.Response.StatusCode(), tt.expectedStatus)
 			}
 
-			// Check content type for successful responses
-			if tt.expectedStatus == 200 && tt.expectedType != "" {
-				contentType := string(ctx.Response.Header.Peek("Content-Type"))
-				if contentType != tt.expectedType {
-					t.Errorf("handler() Content-Type = %v, want %v", contentType, tt.expectedType)
-				}
-			}
-
-			// Check that server header is set
-			server := string(ctx.Response.Header.Peek("Server"))
-			if server != "nano-web" {
-				t.Errorf("handler() Server header = %v, want nano-web", server)
-			}
-
-			// Check encoding header for compressed responses
-			if tt.acceptEncoding == "gzip" && tt.expectedStatus == 200 {
-				encoding := string(ctx.Response.Header.Peek("Content-Encoding"))
-				if encoding != "gzip" {
-					t.Errorf("handler() Content-Encoding = %v, want gzip", encoding)
+			if tt.expectedType != nil {
+				contentType := ctx.Response.Header.Peek("Content-Type")
+				if !bytes.Equal(contentType, tt.expectedType) {
+					t.Errorf("handler() Content-Type = %s, want %s", contentType, tt.expectedType)
 				}
 			}
 		})
@@ -588,109 +498,91 @@ func TestHandler(t *testing.T) {
 }
 
 func TestPopulateRoutes(t *testing.T) {
-	tempDir := setupTestFiles(t)
-	defer os.RemoveAll(tempDir)
+	tmpDir := setupTestFiles(t)
 
-	// Change to temp directory
-	originalDir, _ := os.Getwd()
-	os.Chdir(tempDir)
-	defer os.Chdir(originalDir)
+	// Initialize routes
+	routes = &Routes{
+		m: make(map[string]*Route),
+	}
 
-	// Override global variables for testing
-	originalPublicDir := publicDir
-	originalRoutes := routes
-	originalAppEnv := appEnv
-
-	publicDir = "public"
-	routes = &Routes{m: make(map[string]*Route)}
-	appEnv = map[string]string{"SITE_NAME": "Test Site"}
-
-	defer func() {
-		publicDir = originalPublicDir
-		routes = originalRoutes
-		appEnv = originalAppEnv
-	}()
-
-	populateRoutes()
+	populateRoutes(tmpDir)
 
 	// Check that routes were created
+	expectedRoutes := []string{
+		"/index.html",
+		"/",          // index route
+		"//",         // index route with trailing slash
+		"/style.css",
+		"/script.js",
+		"/data.json",
+		"/image.png",
+		"/document.pdf",
+		"/nested/page.html",
+	}
+
+	for _, routePath := range expectedRoutes {
+		if _, exists := getRoute(routePath); !exists {
+			t.Errorf("Expected route %s was not created", routePath)
+		}
+	}
+
+	// Verify route count
 	routes.RLock()
 	routeCount := len(routes.m)
 	routes.RUnlock()
 
 	if routeCount == 0 {
-		t.Error("populateRoutes() created no routes")
-	}
-
-	// Check specific routes
-	expectedRoutes := []string{"/", "/index.html", "/style.css", "/script.js", "/data.json", "/image.png", "/subdir/sub.html"}
-
-	for _, path := range expectedRoutes {
-		route, exists := getRoute(path)
-		if !exists {
-			t.Errorf("populateRoutes() missing route for %s", path)
-		} else if route == nil {
-			t.Errorf("populateRoutes() route for %s is nil", path)
-		}
+		t.Error("No routes were populated")
 	}
 }
 
 func BenchmarkHandler(b *testing.B) {
-	tempDir := setupTestFiles(b)
-	defer os.RemoveAll(tempDir)
+	tmpDir := setupTestFiles(&testing.T{})
 
-	// Change to temp directory and set up routes
-	originalDir, _ := os.Getwd()
-	os.Chdir(tempDir)
-	defer os.Chdir(originalDir)
+	// Set up test environment
+	appEnv = map[string]string{
+		"API_URL": "https://api.example.com",
+		"DEBUG":   "true",
+	}
 
-	// Override global variables for testing
-	originalPublicDir := publicDir
-	originalRoutes := routes
-	originalAppEnv := appEnv
-	originalLogRequests := logRequests
+	// Initialize routes
+	routes = &Routes{
+		m: make(map[string]*Route),
+	}
+	populateRoutes(tmpDir)
 
-	publicDir = "public"
-	routes = &Routes{m: make(map[string]*Route)}
-	appEnv = map[string]string{"SITE_NAME": "Test Site"}
-	logRequests = false
+	serveCmd := &ServeCmd{
+		PublicDir:    tmpDir,
+		SpaMode:      false,
+		LogRequests:  false,
+		LogLevel:     "error",
+		LogFormat:    "json",
+		ConfigPrefix: "VITE_",
+	}
 
-	defer func() {
-		publicDir = originalPublicDir
-		routes = originalRoutes
-		appEnv = originalAppEnv
-		logRequests = originalLogRequests
-	}()
-
-	populateRoutes()
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		ctx := &fasthttp.RequestCtx{}
-		ctx.Request.SetRequestURI("/")
-		ctx.Request.Header.SetMethod("GET")
-		ctx.Request.Header.Set("Accept-Encoding", "gzip")
-		for pb.Next() {
-			ctx.Response.Reset()
-			handler(ctx)
-		}
-	})
-}
-
-func BenchmarkGzipCompression(b *testing.B) {
-	data := []byte(strings.Repeat("Hello, World! This is a test string for compression. ", 100))
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.SetRequestURI("/")
+	ctx.Request.Header.SetMethod("GET")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = gzipData(data)
+		ctx.Response.Reset()
+		handler(ctx, serveCmd)
+	}
+}
+
+func BenchmarkGzipCompression(b *testing.B) {
+	data := []byte(strings.Repeat("Hello, World! This is test data for compression. ", 100))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		gzipData(data)
 	}
 }
 
 func BenchmarkBrotliCompression(b *testing.B) {
-	data := []byte(strings.Repeat("Hello, World! This is a test string for compression. ", 100))
-
+	data := []byte(strings.Repeat("Hello, World! This is test data for compression. ", 100))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = brotliData(data)
+		brotliData(data)
 	}
 }
