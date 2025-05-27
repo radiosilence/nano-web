@@ -2,7 +2,6 @@
 
 ![publish-image](https://github.com/radiosilence/nano-web/actions/workflows/publish-image.yml/badge.svg)
 ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
-![benchmark](https://github.com/radiosilence/nano-web/actions/workflows/benchmark.yml/badge.svg)
 ![release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
 ![test](https://github.com/radiosilence/nano-web/actions/workflows/test.yml/badge.svg)
 [![Go Report Card](https://goreportcard.com/badge/github.com/radiosilence/nano-web)](https://goreportcard.com/report/github.com/radiosilence/nano-web) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
