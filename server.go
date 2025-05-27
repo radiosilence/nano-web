@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"sync/atomic"
 	"time"
@@ -12,8 +13,7 @@ import (
 
 var (
 	// Pre-allocated byte slices for common strings
-	healthPath      = []byte("/health")
-	altHealthPath   = []byte("/_health")
+	healthPath      = []byte("/_health")
 	contentTypeKey  = []byte("Content-Type")
 	serverKey       = []byte("Server")
 	serverValue     = []byte("nano-web")
@@ -42,17 +42,30 @@ func serveNotFound(ctx *fasthttp.RequestCtx) {
 	ctx.WriteString("404 Not Found")
 }
 
-func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
-	atomic.AddInt64(&requestCount, 1)
-
-	path := string(ctx.Path())
-
-	// Health check endpoints
-	if bytes.Equal(ctx.Path(), healthPath) || bytes.Equal(ctx.Path(), altHealthPath) {
-		healthCheckHandler(ctx)
-		return
+func refreshRouteIfModified(path string, route *Route) (*Route, error) {
+	fileInfo, err := os.Stat(route.Path)
+	log.Info().Str("path", route.Path).Msg("checking whether file has been modified")
+	if err != nil {
+		return nil, err
 	}
+	log.Info().Str("path", route.Path).Str("file modified", fileInfo.ModTime().String()).Str("route modified", route.ModTime.String()).Msg("comparing modtimes")
+	if fileInfo.ModTime().After(route.ModTime) {
+		content, err := os.ReadFile(route.Path)
+		if err != nil {
+			return nil, err
+		}
+		log.Debug().Str("path", route.Path).Msg("recaching route")
+		route = makeRoute(route.Path, content, fileInfo.ModTime())
+		routes.Lock()
+		routes.m[path] = route
+		routes.Unlock()
+	} else {
+		log.Debug().Str("path", route.Path).Msg("route not modified")
+	}
+	return route, nil
+}
 
+func resolveRoute(ctx *fasthttp.RequestCtx, s *ServeCmd, path string) (*Route, error) {
 	// Get route
 	route := getRoute(path)
 	if route == nil {
@@ -67,35 +80,37 @@ func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
 		}
 
 		if route == nil {
-			serveNotFound(ctx)
-			return
+			return nil, errors.New("not found")
 		}
 	}
+	return route, nil
+}
 
-	log.Info().Bool("s.Dev", s.Dev).Msg("checking whether dev mode enabled")
+func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
+	atomic.AddInt64(&requestCount, 1)
+
+	path := string(ctx.Path())
+
+	// Health check endpoints
+	if bytes.Equal(ctx.Path(), healthPath) {
+		healthCheckHandler(ctx)
+		return
+	}
+
+	route, err := resolveRoute(ctx, s, path)
+
+	if err != nil {
+		serveNotFound(ctx)
+		return
+	}
 
 	if s.Dev {
-		fileInfo, err := os.Stat(route.Path)
-		log.Info().Str("path", route.Path).Msg("checking whether file has been modified")
+		refreshedRoute, err := refreshRouteIfModified(path, route)
 		if err != nil {
 			serveNotFound(ctx)
 			return
 		}
-		log.Info().Str("path", route.Path).Str("file modified", fileInfo.ModTime().String()).Str("route modified", route.ModTime.String()).Msg("comparing modtimes")
-		if fileInfo.ModTime().After(route.ModTime) {
-			content, err := os.ReadFile(route.Path)
-			if err != nil {
-				serveNotFound(ctx)
-				return
-			}
-			log.Debug().Str("path", route.Path).Msg("recaching route")
-			route = makeRoute(route.Path, content, fileInfo.ModTime())
-			routes.Lock()
-			routes.m[path] = route
-			routes.Unlock()
-		} else {
-			log.Debug().Str("path", route.Path).Msg("route not modified")
-		}
+		route = refreshedRoute
 	}
 
 	// Set headers

@@ -14,9 +14,8 @@ import (
 var appEnv map[string]string
 
 type CLI struct {
-	Serve       ServeCmd       `cmd:"" help:"Start the web server"`
-	HealthCheck HealthCheckCmd `cmd:"" help:"Run health check"`
-	Version     VersionCmd     `cmd:"" help:"Show version information"`
+	Serve   ServeCmd   `cmd:"" help:"Start the web server"`
+	Version VersionCmd `cmd:"" help:"Show version information"`
 }
 
 type ServeCmd struct {
@@ -28,14 +27,6 @@ type ServeCmd struct {
 	LogLevel     string `help:"Log level (debug, info, warn, error)" default:"info" enum:"debug,info,warn,error"`
 	LogFormat    string `help:"Log format (json, console)" default:"console" enum:"json,console"`
 	LogRequests  bool   `help:"Log HTTP requests" default:"true"`
-}
-
-type HealthCheckCmd struct{}
-
-func (h *HealthCheckCmd) Run() error {
-	// Simple health check - could be expanded to check dependencies
-	fmt.Println("Health check: OK")
-	return nil
 }
 
 type VersionCmd struct{}

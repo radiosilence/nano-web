@@ -188,11 +188,6 @@ tasks:
     deps: [pkg-add]
     cmd: ops pkg load -l {{.PKGRELEASE}} -p 80
 
-  health:
-    desc: "🩺 Run health check"
-    deps: [build]
-    cmd: ./{{.PKGNAME}} health-check
-
   current-version:
     desc: "📋 Show current version from file"
     cmd: cat VERSION
