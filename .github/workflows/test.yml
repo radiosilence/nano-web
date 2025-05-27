@@ -27,17 +27,6 @@ jobs:
           go-version: ${{ matrix.go-version }}
           check-latest: true
 
-      - name: 📦 Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ matrix.go-version }}-
-            ${{ runner.os }}-go-
-
       - name: 🔧 Set up Task
         uses: arduino/setup-task@v1
         with:
