@@ -171,10 +171,16 @@ Defaults to readable style (`--log-format console`):
 
 Structured JSON for consumption by logging platforms such as DataDog etc (`--log-format json`) **(enabled by default in docker)**:
 
-```bash
-# Production (JSON)
-{"level":"info","time":"2024-01-15T10:30:45Z","message":"request served","method":"GET","path":"/","status":200,"duration_ms":1.2}
-
+```json
+{
+  "level": "info",
+  "time": "2024-01-15T10:30:45Z",
+  "message": "request served",
+  "method": "GET",
+  "path": "/",
+  "status": 200,
+  "duration_ms": 1.2
+}
 ```
 
 ## 🏗️ Building from Source
