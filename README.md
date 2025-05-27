@@ -80,14 +80,15 @@ docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
 
 ## ⚙️ Configuration
 
-| Variable        | CLI Flag          | Default   | Description                                       |
-| --------------- | ----------------- | --------- | ------------------------------------------------- |
-| `PORT`          | `--port`          | `80`      | Port to listen on                                 |
-| `SPA_MODE`      | `--spa-mode`      | `false`   | Enable SPA mode (serve index.html for 404s)       |
-| `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Prefix for runtime environment variable injection |
-| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging level: `debug`, `info`, `warn`, `error`   |
-| `LOG_FORMAT`    | `--log-format`    | `console` | Log format: `json` or `console`                   |
-| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable/disable request logging                    |
+| Variable        | CLI Flag          | Default   | Description                                                 |
+| --------------- | ----------------- | --------- | ----------------------------------------------------------- |
+| `PORT`          | `--port`          | `80`      | Port to listen on                                           |
+| `SPA_MODE`      | `--spa-mode`      | `false`   | Enable SPA mode (serve index.html for 404s)                 |
+| `DEV`           | `--dev`           | `false`   | Enable Dev mode (check for file changes when serving files) |
+| `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Prefix for runtime environment variable injection           |
+| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging level: `debug`, `info`, `warn`, `error`             |
+| `LOG_FORMAT`    | `--log-format`    | `console` | Log format: `json` or `console`                             |
+| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable/disable request logging                              |
 
 ## 🚑 Health checks
 
@@ -128,8 +129,8 @@ nano-web serve
 # Serve files from custom directory on port 8080
 nano-web serve ./dist --port 8080
 
-# Enable SPA mode with custom configuration
-nano-web serve ./build --port 3000 --spa-mode --log-level debug
+# Enable SPA mode with custom configuration and file reloading
+nano-web serve ./build --port 3000 --spa-mode --dev --log-level debug
 
 # See all available options
 nano-web --help
@@ -210,7 +211,7 @@ task test-coverage
 # Run benchmarks
 task bench
 
-# Development server with hot reload
+# Development server with reloading and debug logging
 task dev
 ```
 

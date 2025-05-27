@@ -1,18 +1,23 @@
 package main
 
 import (
+	"crypto/md5"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
 type Route struct {
-	Content      Content
-	ContentType  []byte
-	LastModified []byte
+	Content Content
+	Path    string
+	ModTime time.Time
+	Headers *Headers
 }
 
 type Content struct {
@@ -24,6 +29,12 @@ type Content struct {
 	BrotliLen int
 }
 
+type Headers struct {
+	ContentType  []byte
+	LastModified []byte
+	ETag         []byte
+}
+
 type Routes struct {
 	sync.RWMutex
 	m map[string]*Route
@@ -31,7 +42,13 @@ type Routes struct {
 
 var routes *Routes
 
-func makeRoute(path string, content []byte) *Route {
+func eTagBytesStrong(t time.Time) []byte {
+	timestamp := strconv.FormatInt(t.UnixNano(), 10)
+	hash := md5.Sum([]byte(timestamp))
+	return []byte(fmt.Sprintf(`"%x"`, hash))
+}
+
+func makeRoute(path string, content []byte, modTime time.Time) *Route {
 	mimetype := getMimetype(path)
 
 	// Check if file should be templated
@@ -46,12 +63,17 @@ func makeRoute(path string, content []byte) *Route {
 	}
 
 	route := &Route{
+		Path:    path,
+		ModTime: modTime,
 		Content: Content{
 			Plain:    content,
 			PlainLen: len(content),
 		},
-		ContentType:  mimetype,
-		LastModified: []byte("Mon, 01 Jan 2024 00:00:00 GMT"), // Static last modified
+		Headers: &Headers{
+			ContentType:  mimetype,
+			ETag:         eTagBytesStrong(modTime),
+			LastModified: []byte(modTime.Format(time.RFC1123)),
+		},
 	}
 
 	// Compress if appropriate
@@ -110,7 +132,7 @@ func populateRoutes(publicDir string) error {
 		}
 
 		// Create route
-		route := makeRoute(filePath, content)
+		route := makeRoute(filePath, content, info.ModTime())
 
 		routes.Lock()
 		routes.m[urlPath] = route

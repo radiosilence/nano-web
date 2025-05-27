@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,7 @@ var (
 	serverKey       = []byte("Server")
 	serverValue     = []byte("nano-web")
 	lastModifiedKey = []byte("Last-Modified")
+	eTagKey         = []byte("ETag")
 	acceptEncoding  = []byte("Accept-Encoding")
 	contentEncoding = []byte("Content-Encoding")
 	brEncoding      = []byte("br")
@@ -31,6 +33,13 @@ func healthCheckHandler(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	ctx.WriteString(`{"status":"ok","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `"}`)
+}
+
+func serveNotFound(ctx *fasthttp.RequestCtx) {
+	atomic.AddInt64(&errorCount, 1)
+	ctx.SetStatusCode(fasthttp.StatusNotFound)
+	ctx.SetContentType("text/plain")
+	ctx.WriteString("404 Not Found")
 }
 
 func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
@@ -58,18 +67,42 @@ func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
 		}
 
 		if route == nil {
-			atomic.AddInt64(&errorCount, 1)
-			ctx.SetStatusCode(fasthttp.StatusNotFound)
-			ctx.SetContentType("text/plain")
-			ctx.WriteString("404 Not Found")
+			serveNotFound(ctx)
 			return
 		}
 	}
 
+	log.Info().Bool("s.Dev", s.Dev).Msg("checking whether dev mode enabled")
+
+	if s.Dev {
+		fileInfo, err := os.Stat(route.Path)
+		log.Info().Str("path", route.Path).Msg("checking whether file has been modified")
+		if err != nil {
+			serveNotFound(ctx)
+			return
+		}
+		log.Info().Str("path", route.Path).Str("file modified", fileInfo.ModTime().String()).Str("route modified", route.ModTime.String()).Msg("comparing modtimes")
+		if fileInfo.ModTime().After(route.ModTime) {
+			content, err := os.ReadFile(route.Path)
+			if err != nil {
+				serveNotFound(ctx)
+				return
+			}
+			log.Debug().Str("path", route.Path).Msg("recaching route")
+			route = makeRoute(route.Path, content, fileInfo.ModTime())
+			routes.Lock()
+			routes.m[path] = route
+			routes.Unlock()
+		} else {
+			log.Debug().Str("path", route.Path).Msg("route not modified")
+		}
+	}
+
 	// Set headers
-	ctx.Response.Header.SetBytesKV(contentTypeKey, route.ContentType)
 	ctx.Response.Header.SetBytesKV(serverKey, serverValue)
-	ctx.Response.Header.SetBytesKV(lastModifiedKey, route.LastModified)
+	ctx.Response.Header.SetBytesKV(contentTypeKey, route.Headers.ContentType)
+	ctx.Response.Header.SetBytesKV(eTagKey, route.Headers.ETag)
+	ctx.Response.Header.SetBytesKV(lastModifiedKey, route.Headers.LastModified)
 
 	// Handle compression
 	acceptEncodingHeader := ctx.Request.Header.Peek("Accept-Encoding")
