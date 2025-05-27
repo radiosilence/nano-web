@@ -58,18 +58,22 @@ Instead of rebuilding your app for different environments, inject configuration 
 
 ```html
 <!-- Your index.html -->
-<script>
+<script type="module">
+  // You can wrap the escaped JSON in a string and parse it.
   window.ENV = JSON.parse("{{.EscapedJson}}");
+  // You can pass in the raw JSON, but this means having the template tag directly inserted without
+  // being quoted.
+  window.ENV = {{.Json}};
 </script>
 ```
 
 ```typescript
 import { z } from "zod";
 // Your React/Vue/whatever app
-const ConfigSchema = z.object({
+const EnvSchema = z.object({
   API_URL: z.string().optional(),
 });
-const { API_URL } = ConfigSchema.parse(window.ENV));
+const { API_URL } = EnvSchema.parse(window.ENV));
 ```
 
 ```bash
