@@ -26,7 +26,7 @@ tasks:
   dev:
     desc: "🚀 Run development server"
     deps: [build]
-    cmd: ./{{.PKGNAME}} serve --port 8080 --log-format console --log-level debug
+    cmd: ./{{.PKGNAME}} serve --port 3000 --log-format console --log-level debug
 
   run:
     desc: "🏃 Run with go run"

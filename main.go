@@ -25,7 +25,7 @@ type ServeCmd struct {
 	SpaMode      bool   `help:"Enable SPA mode (serve index.html for all routes)" default:"false"`
 	ConfigPrefix string `help:"Environment variable prefix for config injection" default:"VITE_"`
 	LogLevel     string `help:"Log level (debug, info, warn, error)" default:"info" enum:"debug,info,warn,error"`
-	LogFormat    string `help:"Log format (json, console)" default:"json" enum:"json,console"`
+	LogFormat    string `help:"Log format (json, console)" default:"console" enum:"json,console"`
 	LogRequests  bool   `help:"Log HTTP requests" default:"true"`
 }
 
