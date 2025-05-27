@@ -4,14 +4,14 @@
 
 > ⚡ **Hyper-minimal, lightning-fast web server for SPAs and static content**
 
-Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal resource usage. Designed for containerized deployments/unikernel environments with immutable content.
+Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal latency. Purpose built for use with containerized deployments/unikernel environments with immutable content, however totally useable as a local CLI server.
 
 ## ✨ What makes nano-web different
 
 - 🚄 **Ridiculously low latency** - Pre-caches everything in memory prec-ompressed with brotli/gzip, serves 100k+ requests/second with sub-millisecond latency.
 - 📦 **Tiny footprint** - Tiny (<20MB) Docker image.
 - 🔧 **Runtime environment injection** - Safely inject environment variables at runtime, perfect for easily configuring containers without rebuilding.
-- 🚑 **Inbuilt Healtchecks** - Available at `/_health` and via the CLI.
+- 🚑 **Inbuilt Healthchecks** - Available at `/_health` and via the CLI.
 - 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing.
 - ⚡️ **Fast builds** - Building an image from nano-web is extremely fast.
 
@@ -27,7 +27,7 @@ Transfer/sec: 721MB/s
 Latency: 200μs avg (96.93% consistency)
 ```
 
-The trade-off is simple: use more memory at startup for faster requests. Your results will vary based on content size and hardware, but the approach is consistent. Generally it shouldn't use that much more RAM than the project.
+The trade-off is simple: use more memory at startup for to do less work on each requests due to having predictable content. Generally it shouldn't use that much more RAM than the project.
 
 ## 🐳 Docker
 
@@ -129,7 +129,7 @@ nano-web serve
 # Serve files from custom directory on port 8080
 nano-web serve ./dist --port 8080
 
-# Enable SPA mode with custom configuration and file reloading
+# Enable SPA mode with custom configuration, file reloading, and debug logging (similar to `task dev`)
 nano-web serve ./build --port 3000 --spa-mode --dev --log-level debug
 
 # See all available options
@@ -165,7 +165,7 @@ Defaults to readable style (`--log-format console`):
 9:16AM INF request handled bytes=21 duration=0.044208 method=GET path=/ status=200
 ```
 
-Structured JSON for consumption by logging utilities such as DataDog etc (`--log-format json`) **(enabled by default in docker)**:
+Structured JSON for consumption by logging platforms such as DataDog etc (`--log-format json`) **(enabled by default in docker)**:
 
 ```bash
 # Production (JSON)
