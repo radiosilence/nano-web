@@ -11,7 +11,7 @@ Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed f
 - 🚄 **Ridiculously low latency** - Pre-caches everything in memory prec-ompressed with brotli/gzip, serves 100k+ requests/second with sub-millisecond latency.
 - 📦 **Tiny footprint** - Tiny (<20MB) Docker image.
 - 🔧 **Runtime environment injection** - Safely inject environment variables at runtime, perfect for easily configuring containers without rebuilding.
-- 🚑 **Inbuilt Healthchecks** - Available at `/_health` and via the CLI.
+- 🚑 **Inbuilt Healthchecks** - Available at `/_health`.
 - 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing.
 - ⚡️ **Fast builds** - Building an image from nano-web is extremely fast.
 
@@ -102,8 +102,6 @@ Enabled by default at `/_health`:
 {"status":"ok","timestamp":"2025-05-27T08:19:32Z"}
 ```
 
-But can also be invoked with `nano-web health-check`.
-
 ### 📺 CLI Usage
 
 #### Install via Go
@@ -139,9 +137,6 @@ nano-web serve ./build --port 3000 --spa-mode --dev --log-level debug
 # See all available options
 nano-web --help
 nano-web serve --help
-
-# Health check (useful for monitoring)
-nano-web health-check
 
 # Show version
 nano-web version

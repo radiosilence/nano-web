@@ -48,7 +48,7 @@ EXPOSE $PORT
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/nano-web", "health-check"]
+    CMD curl -f http://localhost:$PORT/_health || exit 1
 
 # Set labels for better maintainability
 LABEL org.opencontainers.image.title="nano-web"

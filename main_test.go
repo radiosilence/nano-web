@@ -434,7 +434,7 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name:           "health check",
-			path:           "/health",
+			path:           "/_health",
 			method:         "GET",
 			acceptEncoding: "",
 			spaMode:        false,
