@@ -134,11 +134,6 @@ func populateRoutes(publicDir string) error {
 				Msg("adding index route")
 
 			routes.m[dir] = route
-
-			// Also add with double slash for root
-			if dir == "/" {
-				routes.m["//"] = route
-			}
 		}
 		routes.Unlock()
 
