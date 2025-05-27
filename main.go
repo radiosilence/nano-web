@@ -21,7 +21,7 @@ type CLI struct {
 type ServeCmd struct {
 	PublicDir    string `arg:"" help:"Directory to serve" default:"public" env:"PUBLIC_DIR"`
 	Port         int    `short:"p" help:"Port to listen on" default:"80" env:"PORT"`
-	Dev          bool   `short:"d" help:"Check/reload files if modified" default:"false" env:"DEV_MODE"`
+	Dev          bool   `short:"d" help:"Check/reload files if modified" default:"false" env:"DEV"`
 	SpaMode      bool   `help:"Enable SPA mode (serve index.html for all routes)" default:"false" env:"SPA_MODE"`
 	ConfigPrefix string `help:"Environment variable prefix for config injection" default:"VITE_" env:"CONFIG_PREFIX"`
 	LogLevel     string `help:"Log level (debug, info, warn, error)" default:"info" enum:"debug,info,warn,error" env:"LOG_LEVEL"`
