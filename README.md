@@ -147,7 +147,24 @@ nano-web health-check
 nano-web version
 ```
 
-## 🌰 OPS Microkernels
+## 🌰 Nanos/OPS Microkernels
+
+You will want to make a config that looks something like this:
+
+```
+{
+  "Dirs": ["public"],
+  "Env": {
+    "SPA_MODE": "1",
+    "PORT": "8081"
+  },
+  "RunConfig": {
+    "Ports": ["8081"]
+  }
+}
+```
+
+And then you can build your unikernel image:
 
 ```bash
 # Build the unikernel image
