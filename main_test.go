@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/valyala/fasthttp"
@@ -318,10 +319,10 @@ func TestMakeRoute(t *testing.T) {
 			} else {
 				return
 			}
-			route := makeRoute(fullPath, content)
+			route := makeRoute(fullPath, content, time.Now())
 
-			if !bytes.Equal(route.ContentType, tt.contentType) {
-				t.Errorf("makeRoute() ContentType = %s, want %s", route.ContentType, tt.contentType)
+			if !bytes.Equal(route.Headers.ContentType, tt.contentType) {
+				t.Errorf("makeRoute() ContentType = %s, want %s", route.Headers.ContentType, tt.contentType)
 			}
 
 			if tt.expectGzip {
@@ -482,8 +483,7 @@ func TestPopulateRoutes(t *testing.T) {
 	// Check that routes were created
 	expectedRoutes := []string{
 		"/index.html",
-		"/",  // index route
-		"//", // index route with trailing slash
+		"/", // index route
 		"/style.css",
 		"/script.js",
 		"/data.json",
