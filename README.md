@@ -1,6 +1,7 @@
 # 🔥 nano-web
 
 ![publish-image](https://github.com/radiosilence/nano-web/actions/workflows/publish-image.yml/badge.svg)
+![push-package](https://github.com/radiosilence/nano-web/actions/workflows/push-package.yml/badge.svg)
 ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
 ![release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
 ![test](https://github.com/radiosilence/nano-web/actions/workflows/test.yml/badge.svg)
