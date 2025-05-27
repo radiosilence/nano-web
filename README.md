@@ -4,18 +4,20 @@
 
 > ⚡ **Hyper-minimal, lightning-fast web server for SPAs and static content**
 
-Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal resource usage. Perfect for containerized deployments and unikernel environments.
+Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal resource usage. Designed for containerized deployments/unikernel environments with immutable content.
 
 ## ✨ What makes nano-web different
 
-- 🚄 **Ridiculously fast** - Pre-caches everything in memory with smart compression, serves 100k+ requests/second with sub-millisecond latency
-- 📦 **Tiny footprint** - Tiny (<20MB) Docker image
-- 🔧 **Runtime environment injection** - Safely inject environment variables into JS at runtime, perfect for easily configuring containers without rebuilding
-- 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing
+- 🚄 **Ridiculously low latency** - Pre-caches everything in memory prec-ompressed with brotli/gzip, serves 100k+ requests/second with sub-millisecond latency.
+- 📦 **Tiny footprint** - Tiny (<20MB) Docker image.
+- 🔧 **Runtime environment injection** - Safely inject environment variables at runtime, perfect for easily configuring containers without rebuilding.
+- 🚑 **Inbuilt Healtchecks** - Available at `/_health` and via the CLI.
+- 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing.
+- ⚡️ **Fast builds** - Building an image from nano-web is extremely fast.
 
 ## 📈 Performance
 
-nano-web pre-caches everything in memory with compression, which makes it fast:
+nano-web pre-caches everything in memory with compression, which makes it fast. Benchmark on a M3 Max 36GB:
 
 ```bash
 wrk -d 10 -c 20 -t 10 http://localhost:80
@@ -25,7 +27,7 @@ Transfer/sec: 721MB/s
 Latency: 200μs avg (96.93% consistency)
 ```
 
-The trade-off is simple: use more memory at startup for faster requests. Your results will vary based on content size and hardware, but the approach is consistent.
+The trade-off is simple: use more memory at startup for faster requests. Your results will vary based on content size and hardware, but the approach is consistent. Generally it shouldn't use that much more RAM than the project.
 
 ## 🐳 Docker
 
@@ -57,14 +59,17 @@ Instead of rebuilding your app for different environments, inject configuration 
 ```html
 <!-- Your index.html -->
 <script>
-  window.ENV = {{.Json}};
-  window.ENV_ESCAPED = "{{.EscapedJson}}";
+  window.ENV = JSON.parse("{{.EscapedJson}}");
 </script>
 ```
 
 ```typescript
+import { z } from "zod";
 // Your React/Vue/whatever app
-const { API_URL } = window.ENV || {};
+const ConfigSchema = z.object({
+  API_URL: z.string().optional(),
+});
+const { API_URL } = ConfigSchema.parse(window.ENV));
 ```
 
 ```bash
@@ -75,14 +80,24 @@ docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
 
 ## ⚙️ Configuration
 
-| Variable        | CLI Flag          | Default | Description                                       |
-| --------------- | ----------------- | ------- | ------------------------------------------------- |
-| `PORT`          | `--port`          | `80`    | Port to listen on                                 |
-| `SPA_MODE`      | `--spa-mode`      | `false` | Enable SPA mode (serve index.html for 404s)       |
-| `CONFIG_PREFIX` | `--config-prefix` | `VITE_` | Prefix for runtime environment variable injection |
-| `LOG_LEVEL`     | `--log-level`     | `info`  | Logging level: `debug`, `info`, `warn`, `error`   |
-| `LOG_FORMAT`    | `--log-format`    | `json`  | Log format: `json` or `console`                   |
-| `LOG_REQUESTS`  | `--log-requests`  | `true`  | Enable/disable request logging                    |
+| Variable        | CLI Flag          | Default   | Description                                       |
+| --------------- | ----------------- | --------- | ------------------------------------------------- |
+| `PORT`          | `--port`          | `80`      | Port to listen on                                 |
+| `SPA_MODE`      | `--spa-mode`      | `false`   | Enable SPA mode (serve index.html for 404s)       |
+| `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Prefix for runtime environment variable injection |
+| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging level: `debug`, `info`, `warn`, `error`   |
+| `LOG_FORMAT`    | `--log-format`    | `console` | Log format: `json` or `console`                   |
+| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable/disable request logging                    |
+
+## 🚑 Health checks
+
+Enabled by default at `/_health`:
+
+```
+{"status":"ok","timestamp":"2025-05-27T08:19:32Z"}
+```
+
+But can also be invoked with `nano-web health-check`.
 
 ### 📺 CLI Usage
 
@@ -127,7 +142,7 @@ nano-web health-check
 nano-web version
 ```
 
-### Build and Run
+## 🌰 OPS Microkernels
 
 ```bash
 # Build the unikernel image
@@ -138,62 +153,18 @@ ops instance create my-website -c ./config.json --port 8080
 
 # Deploy to cloud
 ops instance create my-website -c ./config.json -t gcp
-```
-
-### Build and Run
-
-```bash
-# Build the unikernel image
-ops image create -c config.json --package radiosilence/nano-web:latest -i my-website
-
-# Test locally
-ops instance create my-website -c ./config.json --port 8080
-
-# Deploy to cloud
-ops instance create my-website -c ./config.json -t gcp
-```
-
-### Development Setup
-
-```bash
-# Clone and setup
-git clone https://github.com/radiosilence/nano-web.git
-cd nano-web
-
-# Install development dependencies
-task install-deps
-
-# Download Go dependencies
-task deps
-
-# Run in development mode
-task dev
-
-# Or run directly with go
-task run
-
-# Run all checks (tests, lint, vet)
-task check
-
-# Build for production
-task build
-
-# Health check
-task health
-
-# Show version and build info
-task info
-
-# Create a release
-task release-local
-
-# Clean build artifacts
-task clean-all
 ```
 
 ## 📊 Logging
 
-Structured JSON by default, console format for development:
+Defaults to readable style (`--log-format console`):
+
+```
+9:15AM INF routes populated successfully route_count=3
+9:16AM INF request handled bytes=21 duration=0.044208 method=GET path=/ status=200
+```
+
+Structured JSON for consumption by logging utilities such as DataDog etc (`--log-format json`) **(enabled by default in docker)**:
 
 ```bash
 # Production (JSON)
@@ -243,27 +214,6 @@ task bench
 task dev
 ```
 
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-# Clone and setup
-git clone https://github.com/radiosilence/nano-web.git
-cd nano-web
-
-# Install dependencies
-task deps
-
-# Run in development mode
-task dev
-
-# Run tests
-task test
-```
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -277,5 +227,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <div align="center">
-Made with ❤️ by the @radiosilence
+Made with 🖤 by @radiosilence
 </div>
