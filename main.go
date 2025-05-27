@@ -19,14 +19,14 @@ type CLI struct {
 }
 
 type ServeCmd struct {
-	PublicDir    string `arg:"" help:"Directory to serve" default:"public"`
-	Port         int    `short:"p" help:"Port to listen on" default:"80"`
-	Dev          bool   `short:"d" help:"Check/reload files if modified" default:"false"`
-	SpaMode      bool   `help:"Enable SPA mode (serve index.html for all routes)" default:"false"`
-	ConfigPrefix string `help:"Environment variable prefix for config injection" default:"VITE_"`
-	LogLevel     string `help:"Log level (debug, info, warn, error)" default:"info" enum:"debug,info,warn,error"`
-	LogFormat    string `help:"Log format (json, console)" default:"console" enum:"json,console"`
-	LogRequests  bool   `help:"Log HTTP requests" default:"true"`
+	PublicDir    string `arg:"" help:"Directory to serve" default:"public" env:"PUBLIC_DIR"`
+	Port         int    `short:"p" help:"Port to listen on" default:"80" env:"PORT"`
+	Dev          bool   `short:"d" help:"Check/reload files if modified" default:"false" env:"DEV_MODE"`
+	SpaMode      bool   `help:"Enable SPA mode (serve index.html for all routes)" default:"false" env:"SPA_MODE"`
+	ConfigPrefix string `help:"Environment variable prefix for config injection" default:"VITE_" env:"CONFIG_PREFIX"`
+	LogLevel     string `help:"Log level (debug, info, warn, error)" default:"info" enum:"debug,info,warn,error" env:"LOG_LEVEL"`
+	LogFormat    string `help:"Log format (json, console)" default:"console" enum:"json,console" env:"LOG_FORMAT"`
+	LogRequests  bool   `help:"Log HTTP requests" default:"true" env:"LOG_REQUESTS"`
 }
 
 type VersionCmd struct{}
