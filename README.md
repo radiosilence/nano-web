@@ -40,19 +40,7 @@ FROM ghcr.io/radiosilence/nano-web:latest
 COPY ./dist /public/
 ```
 
-Multi-stage builds work great too:
-
-```dockerfile
-FROM node:18-alpine AS build
-WORKDIR /app
-COPY . .
-RUN npm run build
-
-FROM ghcr.io/radiosilence/nano-web:latest
-COPY --from=build /app/dist /public/
-ENV SPA_MODE=true
-ENV PORT=3000
-```
+Configure with env vars you can see below👇
 
 ## 🔧 Runtime Environment Injection
 
