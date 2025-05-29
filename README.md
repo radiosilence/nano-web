@@ -8,30 +8,30 @@
 
 > ⚡ **Hyper-minimal, lightning-fast web server for SPAs and static content**
 
-Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for maximum performance and minimal latency. Purpose built for use with containerized deployments/unikernel environments with immutable content, however totally useable as a local CLI server.
+Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for minimal latency. Purpose built for use with containerized deployments/unikernel environments with immutable content, however totally useable as a local CLI server.
 
 ## ✨ What makes nano-web different
 
-- 🚄 **Ridiculously low latency** - Pre-caches everything in memory prec-ompressed with brotli/gzip, serves 100k+ requests/second with sub-millisecond latency.
+- 🚄 **Ridiculously low latency** - Pre-caches everything in memory precompressed with brotli/gzip where appropriate, serves 100k+ requests/second with sub-millisecond latency.
 - 📦 **Tiny footprint** - Tiny (<20MB) Docker image.
-- 🔧 **Runtime environment injection** - Safely inject environment variables at runtime, perfect for easily configuring containers without rebuilding.
+- 🔧 **Runtime environment injection** - Safely inject environment variables at runtime, so you can configure containers without rebuilding if you don't want to do different builds for things, or want to test your prod image against a different environment.
 - 🚑 **Inbuilt Healthchecks** - Available at `/_health`.
 - 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing.
-- ⚡️ **Fast builds** - Building an image from nano-web is extremely fast.
+- ⚡️ **Fast builds** - Building an image from nano-web is extremely fast because it is tiny.
 
 ## 📈 Performance
 
-nano-web pre-caches everything in memory with compression, which makes it fast. Benchmark on a M3 Max 36GB:
+nano-web pre-caches everything in memory with compression, which makes it fast. Sure you could rely on filesystem caching to do this, but knowing the content ahead of time allows us just to compress everything and stick it in RAM. Benchmark on a M3 Max 36GB:
 
 ```bash
-wrk -d 10 -c 20 -t 10 http://localhost:80
+wrk -d 10 -c 20 -t 10 http://localhost
   1,012,393 requests in 10.10s, 7.12GB read
 Requests/sec: 100,237
 Transfer/sec: 721MB/s
 Latency: 200μs avg (96.93% consistency)
 ```
 
-The trade-off is simple: use more memory at startup for to do less work on each requests due to having predictable content. Generally it shouldn't use that much more RAM than the project.
+The trade off is basically to use more memory at startup to do less work on each request due to having predictable content. Generally it shouldn't use that much more RAM than the project by much.
 
 ## 🐳 Docker
 
@@ -178,7 +178,7 @@ ops instance create my-website -c ./config.json -t gcp
 
 ## 📊 Logging
 
-Defaults to readable style (`--log-format console`):
+Defaults to readable, colourful style (`--log-format console`):
 
 ```
 9:15AM INF routes populated successfully route_count=3
@@ -247,7 +247,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- [FastHTTP](https://github.com/valyala/fasthttp) - The blazing fast HTTP library
+- [FastHTTP](https://github.com/valyala/fasthttp) - Fast HTTP library
 - [Zerolog](https://github.com/rs/zerolog) - Structured logging library
 - [Brotli](https://github.com/google/brotli) - Compression algorithm
 
