@@ -13,16 +13,17 @@ import (
 
 var (
 	// Pre-allocated byte slices for common strings
-	healthPath      = []byte("/_health")
-	contentTypeKey  = []byte("Content-Type")
-	serverKey       = []byte("Server")
-	serverValue     = []byte("nano-web")
-	lastModifiedKey = []byte("Last-Modified")
-	eTagKey         = []byte("ETag")
-	acceptEncoding  = []byte("Accept-Encoding")
-	contentEncoding = []byte("Content-Encoding")
-	brEncoding      = []byte("br")
-	gzipEncoding    = []byte("gzip")
+	healthPath       = []byte("/_health")
+	contentTypeKey   = []byte("Content-Type")
+	serverKey        = []byte("Server")
+	serverValue      = []byte("nano-web")
+	lastModifiedKey  = []byte("Last-Modified")
+	eTagKey          = []byte("ETag")
+	cacheControlKey  = []byte("Cache-Control")
+	acceptEncoding   = []byte("Accept-Encoding")
+	contentEncoding  = []byte("Content-Encoding")
+	brEncoding       = []byte("br")
+	gzipEncoding     = []byte("gzip")
 
 	// Metrics
 	requestCount int64
@@ -118,6 +119,7 @@ func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
 	ctx.Response.Header.SetBytesKV(contentTypeKey, route.Headers.ContentType)
 	ctx.Response.Header.SetBytesKV(eTagKey, route.Headers.ETag)
 	ctx.Response.Header.SetBytesKV(lastModifiedKey, route.Headers.LastModified)
+	ctx.Response.Header.SetBytesKV(cacheControlKey, route.Headers.CacheControl)
 
 	// Handle compression
 	acceptEncodingHeader := ctx.Request.Header.Peek("Accept-Encoding")

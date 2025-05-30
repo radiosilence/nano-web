@@ -33,6 +33,7 @@ type Headers struct {
 	ContentType  []byte
 	LastModified []byte
 	ETag         []byte
+	CacheControl []byte
 }
 
 type Routes struct {
@@ -46,6 +47,47 @@ func eTagBytesStrong(t time.Time) []byte {
 	timestamp := strconv.FormatInt(t.UnixNano(), 10)
 	hash := md5.Sum([]byte(timestamp))
 	return []byte(fmt.Sprintf(`"%x"`, hash))
+}
+
+func getCacheControl(mimetype []byte) []byte {
+	mimeStr := string(mimetype)
+	
+	// Assets get long-term caching (1 year)
+	if isAsset(mimeStr) {
+		return []byte("public, max-age=31536000, immutable")
+	}
+	
+	// HTML files get short-term caching (15 minutes)
+	if mimeStr == "text/html" {
+		return []byte("public, max-age=900")
+	}
+	
+	// Everything else gets moderate caching (1 hour)
+	return []byte("public, max-age=3600")
+}
+
+func isAsset(mimeType string) bool {
+	// CSS and JavaScript
+	if mimeType == "text/css" || mimeType == "text/javascript" {
+		return true
+	}
+	
+	// Images
+	if strings.HasPrefix(mimeType, "image/") {
+		return true
+	}
+	
+	// Fonts
+	if strings.HasPrefix(mimeType, "font/") || mimeType == "application/vnd.ms-fontobject" {
+		return true
+	}
+	
+	// Audio and Video (also considered assets)
+	if strings.HasPrefix(mimeType, "audio/") || strings.HasPrefix(mimeType, "video/") {
+		return true
+	}
+	
+	return false
 }
 
 func makeRoute(path string, content []byte, modTime time.Time) *Route {
@@ -73,6 +115,7 @@ func makeRoute(path string, content []byte, modTime time.Time) *Route {
 			ContentType:  mimetype,
 			ETag:         eTagBytesStrong(modTime),
 			LastModified: []byte(modTime.Format(time.RFC1123)),
+			CacheControl: getCacheControl(mimetype),
 		},
 	}
 
