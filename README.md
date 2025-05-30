@@ -40,6 +40,34 @@ FROM ghcr.io/radiosilence/nano-web:latest
 COPY ./dist /public/
 ```
 
+Real-world example for running as unprivileged user (/bin/sh etc are not available for the runner):
+
+```dockerfile
+FROM oven/bun:1 AS base
+RUN adduser --disabled-password --shell /bin/sh nano
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json ./
+RUN bun install
+
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN bun run build
+RUN chown -R nano:nano /app/.output/public/
+
+FROM ghcr.io/radiosilence/nano-web:latest AS runner
+COPY --from=base /etc/passwd /etc/passwd
+COPY --from=base /etc/group /etc/group
+COPY --from=builder /app/.output/public/ /public/
+USER nano
+ENV PORT=3000
+EXPOSE 3000
+```
+
+_This is a TanStack Start project being built statically with bun._
+
 Configure with env vars you can see below👇
 
 ## 🔧 Runtime Environment Injection
@@ -102,19 +130,7 @@ Enabled by default at `/_health`:
 go install github.com/radiosilence/nano-web@latest
 ```
 
-#### Download Binary
-
-```bash
-# Download the latest release for your platform
-wget https://github.com/radiosilence/nano-web/releases/latest/download/nano-web-linux-amd64.tar.gz
-tar -xzf nano-web-linux-amd64.tar.gz
-chmod +x nano-web-linux-amd64
-
-# Or use the shorter name after installation
-mv nano-web-linux-amd64 /usr/local/bin/nano-web
-```
-
-### Usage Examples
+#### Usage Examples
 
 ```bash
 # Basic usage - serve files from ./public/ on port 80
