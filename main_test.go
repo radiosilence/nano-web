@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 	"github.com/valyala/fasthttp"
 )
 
@@ -169,7 +170,32 @@ func TestBrotliData(t *testing.T) {
 		t.Fatalf("Failed to decompress brotli data: %v", err)
 	}
 
-	if !bytes.Equal(decompressed, testData) {
+	if !bytes.Equal(testData, decompressed) {
+		t.Errorf("Decompressed data doesn't match original. Got %s, want %s", decompressed, testData)
+	}
+}
+
+func TestZstdData(t *testing.T) {
+	testData := []byte("Hello, World! This is test data for compression.")
+	compressed := zstdData(testData)
+
+	if len(compressed) == 0 {
+		t.Error("zstdData() returned empty data")
+	}
+
+	// Verify it's actually compressed data by trying to decompress it
+	reader, err := zstd.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatalf("Failed to create zstd reader: %v", err)
+	}
+	defer reader.Close()
+	
+	decompressed, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("Failed to decompress zstd data: %v", err)
+	}
+
+	if !bytes.Equal(testData, decompressed) {
 		t.Errorf("Decompressed data doesn't match original. Got %s, want %s", decompressed, testData)
 	}
 }
@@ -207,9 +233,14 @@ func TestGetAcceptedEncoding(t *testing.T) {
 		{"no encoding", "", ""},
 		{"gzip only", "gzip", "gzip"},
 		{"brotli only", "br", "br"},
-		{"both", "gzip, br", "br"},
+		{"zstd only", "zstd", "zstd"},
+		{"both gzip and br", "gzip, br", "br"},
 		{"brotli first", "br, gzip", "br"},
 		{"gzip first", "gzip, br", "br"}, // br is still preferred
+		{"zstd with gzip", "zstd, gzip", "zstd"},
+		{"zstd with brotli", "zstd, br", "zstd"},
+		{"all three encodings", "gzip, br, zstd", "zstd"},
+		{"zstd last", "gzip, br, zstd", "zstd"}, // zstd is still preferred
 	}
 
 	for _, tt := range tests {
@@ -259,6 +290,7 @@ func TestMakeRoute(t *testing.T) {
 		contentType  []byte
 		expectGzip   bool
 		expectBrotli bool
+		expectZstd   bool
 		expectError  bool
 	}{
 		{
@@ -267,6 +299,7 @@ func TestMakeRoute(t *testing.T) {
 			contentType:  []byte("text/html"),
 			expectGzip:   true,
 			expectBrotli: true,
+			expectZstd:   true,
 		},
 		{
 			name:         "CSS file",
@@ -274,6 +307,7 @@ func TestMakeRoute(t *testing.T) {
 			contentType:  []byte("text/css"),
 			expectGzip:   true,
 			expectBrotli: true,
+			expectZstd:   true,
 		},
 		{
 			name:         "JavaScript file",
@@ -281,13 +315,15 @@ func TestMakeRoute(t *testing.T) {
 			contentType:  []byte("text/javascript"),
 			expectGzip:   true,
 			expectBrotli: true,
+			expectZstd:   true,
 		},
 		{
-			name:         "JSON file with templating",
+			name:         "JSON file",
 			path:         "data.json",
 			contentType:  []byte("application/json"),
 			expectGzip:   true,
 			expectBrotli: true,
+			expectZstd:   true,
 		},
 		{
 			name:         "PNG file without compression",
@@ -348,6 +384,19 @@ func TestMakeRoute(t *testing.T) {
 			} else {
 				if len(route.Content.Brotli) != 0 {
 					t.Errorf("makeRoute() expected no brotli compression but got some")
+				}
+			}
+
+			if tt.expectZstd {
+				if len(route.Content.Zstd) == 0 {
+					t.Errorf("makeRoute() expected zstd compression but got none")
+				}
+				if route.Content.ZstdLen != len(route.Content.Zstd) {
+					t.Errorf("makeRoute() ZstdLen = %d, want %d", route.Content.ZstdLen, len(route.Content.Zstd))
+				}
+			} else {
+				if len(route.Content.Zstd) != 0 {
+					t.Errorf("makeRoute() expected no zstd compression but got some")
 				}
 			}
 
@@ -414,6 +463,15 @@ func TestHandler(t *testing.T) {
 			spaMode:        false,
 			expectedStatus: 200,
 			expectedType:   []byte("text/javascript"),
+		},
+		{
+			name:           "serve JSON with zstd",
+			path:           "/data.json",
+			method:         "GET",
+			acceptEncoding: "zstd, br, gzip",
+			spaMode:        false,
+			expectedStatus: 200,
+			expectedType:   []byte("application/json"),
 		},
 		{
 			name:           "404 without SPA mode",

@@ -24,6 +24,7 @@ var (
 	contentEncoding  = []byte("Content-Encoding")
 	brEncoding       = []byte("br")
 	gzipEncoding     = []byte("gzip")
+	zstdEncoding     = []byte("zstd")
 
 	// Metrics
 	requestCount int64
@@ -123,10 +124,17 @@ func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
 
 	// Handle compression
 	acceptEncodingHeader := ctx.Request.Header.Peek("Accept-Encoding")
-	if len(acceptEncodingHeader) > 0 && (route.Content.GzipLen > 0 || route.Content.BrotliLen > 0) {
+	if len(acceptEncodingHeader) > 0 && (route.Content.GzipLen > 0 || route.Content.BrotliLen > 0 || route.Content.ZstdLen > 0) {
 		encoding := getAcceptedEncoding(acceptEncodingHeader)
 
 		switch encoding {
+		case "zstd":
+			if route.Content.ZstdLen > 0 {
+				ctx.Response.Header.SetBytesKV(contentEncoding, zstdEncoding)
+				ctx.SetBody(route.Content.Zstd)
+				return
+			}
+			fallthrough
 		case "br":
 			if route.Content.BrotliLen > 0 {
 				ctx.Response.Header.SetBytesKV(contentEncoding, brEncoding)

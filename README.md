@@ -12,7 +12,7 @@ Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed f
 
 ## ✨ What makes nano-web different
 
-- 🚄 **Ridiculously low latency** - Pre-caches everything in memory precompressed with brotli/gzip where appropriate, serves 100k+ requests/second with sub-millisecond latency.
+- 🚄 **Ridiculously low latency** - Pre-caches everything in memory precompressed with zstd/brotli/gzip where appropriate, serves 100k+ requests/second with sub-millisecond latency.
 - 📦 **Tiny footprint** - Tiny (<20MB) Docker image.
 - 🔧 **Runtime environment injection** - Safely inject environment variables at runtime, so you can configure containers without rebuilding if you don't want to do different builds for things, or want to test your prod image against a different environment.
 - 🚑 **Inbuilt Healthchecks** - Available at `/_health`.
@@ -254,6 +254,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [FastHTTP](https://github.com/valyala/fasthttp) - Fast HTTP library
 - [Zerolog](https://github.com/rs/zerolog) - Structured logging library
 - [Brotli](https://github.com/google/brotli) - Compression algorithm
+- [Zstandard](https://github.com/klauspost/compress) - Fast compression algorithm with excellent compression ratios
 
 ---
 

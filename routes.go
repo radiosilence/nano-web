@@ -24,9 +24,11 @@ type Content struct {
 	Plain     []byte
 	Gzip      []byte
 	Brotli    []byte
+	Zstd      []byte
 	PlainLen  int
 	GzipLen   int
 	BrotliLen int
+	ZstdLen   int
 }
 
 type Headers struct {
@@ -125,6 +127,8 @@ func makeRoute(path string, content []byte, modTime time.Time) *Route {
 		route.Content.GzipLen = len(route.Content.Gzip)
 		route.Content.Brotli = brotliData(content)
 		route.Content.BrotliLen = len(route.Content.Brotli)
+		route.Content.Zstd = zstdData(content)
+		route.Content.ZstdLen = len(route.Content.Zstd)
 	}
 
 	return route
