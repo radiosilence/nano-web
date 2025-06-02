@@ -1,28 +1,32 @@
 # Getting nano-web on Homebrew
 
-This guide covers how to distribute nano-web through Homebrew, both via a custom tap and eventually to homebrew-core.
+This guide covers how to distribute nano-web through Homebrew using the formula in your main repository.
 
-## Option 1: Create Your Own Homebrew Tap (Recommended First Step)
+## Formula in Main Repository (Recommended Approach)
 
-### 1. Create a New Repository
+Your nano-web formula lives right in your main repository at `Formula/nano-web.rb`. This approach:
 
-Create a new GitHub repository named `homebrew-nano-web` (the `homebrew-` prefix is required).
+- ✅ **Keeps everything together** - Formula stays in sync with code
+- ✅ **Easier maintenance** - One repo to manage  
+- ✅ **Simpler for users** - Direct install from main repo
+- ✅ **Better CI/CD** - Update formula in same workflow as releases
 
+## How Users Install
+
+### Direct Install (Recommended)
 ```bash
-# Create the repository on GitHub, then clone it
-git clone https://github.com/radiosilence/homebrew-nano-web.git
-cd homebrew-nano-web
+brew install radiosilence/nano-web/nano-web
 ```
 
-### 2. Create the Formula Directory Structure
-
+### Alternative: Using Tap
 ```bash
-mkdir Formula
+brew tap radiosilence/nano-web https://github.com/radiosilence/nano-web.git
+brew install nano-web
 ```
 
-### 3. Create the Formula File
+## The Formula File
 
-Create `Formula/nano-web.rb`:
+Your `Formula/nano-web.rb` contains:
 
 ```ruby
 class NanoWeb < Formula
@@ -64,7 +68,7 @@ class NanoWeb < Formula
 end
 ```
 
-### 4. Get the SHA256 Hash
+## Get the SHA256 Hash
 
 ```bash
 # Download the release tarball and get its SHA256
@@ -73,7 +77,7 @@ curl -L https://github.com/radiosilence/nano-web/archive/refs/tags/v0.2.0.tar.gz
 
 Update the `sha256` field in the formula with this value.
 
-### 5. Test the Formula Locally
+## Test the Formula Locally
 
 ```bash
 # Install from local formula
@@ -87,68 +91,17 @@ nano-web --help
 brew uninstall nano-web
 ```
 
-### 6. Commit and Push
+## Automate Updates with GitHub Actions
 
-```bash
-git add Formula/nano-web.rb
-git commit -m "Add nano-web formula"
-git push origin main
-```
-
-## Option 2: Automate Updates with GitHub Actions
-
-Create `.github/workflows/update-formula.yml` in your `homebrew-nano-web` repository:
-
-```yaml
-name: Update Formula
-
-on:
-  repository_dispatch:
-    types: [update-formula]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to update to (e.g., v0.2.1)'
-        required: true
-      sha256:
-        description: 'SHA256 of the release tarball'
-        required: true
-
-jobs:
-  update-formula:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Update formula
-        run: |
-          VERSION="${{ github.event.inputs.version || github.event.client_payload.version }}"
-          SHA256="${{ github.event.inputs.sha256 || github.event.client_payload.sha256 }}"
-          
-          # Remove 'v' prefix if present
-          VERSION_NUMBER=${VERSION#v}
-          
-          # Update the formula file
-          sed -i "s|archive/refs/tags/v[^/]*\.tar\.gz|archive/refs/tags/$VERSION.tar.gz|" Formula/nano-web.rb
-          sed -i "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Formula/nano-web.rb
-          
-          # Commit changes
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add Formula/nano-web.rb
-          git commit -m "Update nano-web to $VERSION" || exit 0
-          git push
-```
-
-### 7. Trigger Updates from Main Repository
-
-Add this step to your main nano-web release workflow (`.github/workflows/release.yml`):
+Add this step to your existing release workflow (`.github/workflows/release.yml`):
 
 ```yaml
   update-homebrew:
     needs: release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Get release info
         id: release_info
         run: |
@@ -159,36 +112,23 @@ Add this step to your main nano-web release workflow (`.github/workflows/release
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
 
       - name: Update Homebrew formula
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.HOMEBREW_UPDATE_TOKEN }}
-          repository: radiosilence/homebrew-nano-web
-          event-type: update-formula
-          client-payload: |
-            {
-              "version": "${{ steps.version.outputs.version }}",
-              "sha256": "${{ steps.release_info.outputs.sha256 }}"
-            }
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA256="${{ steps.release_info.outputs.sha256 }}"
+          
+          # Update the formula file
+          sed -i "s|archive/refs/tags/v[^/]*\.tar\.gz|archive/refs/tags/$VERSION.tar.gz|" Formula/nano-web.rb
+          sed -i "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Formula/nano-web.rb
+          
+          # Commit changes
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add Formula/nano-web.rb
+          git commit -m "Update Homebrew formula to $VERSION" || exit 0
+          git push
 ```
 
-You'll need to create a Personal Access Token with `repo` permissions and add it as `HOMEBREW_UPDATE_TOKEN` in your main repository's secrets.
-
-## How Users Install
-
-Once your tap is set up, users can install nano-web like this:
-
-```bash
-# Add your tap
-brew tap radiosilence/nano-web
-
-# Install nano-web
-brew install nano-web
-
-# Or in one command
-brew install radiosilence/nano-web/nano-web
-```
-
-## Option 3: Submit to Homebrew Core (Official)
+## Submit to Homebrew Core (Official)
 
 After your tap is stable and has users, you can submit to homebrew-core:
 
@@ -238,26 +178,24 @@ end
 
 ## Tips for Success
 
-1. **Start with your own tap** - Build a user base and prove stability
-2. **Keep formula simple** - Homebrew prefers minimal, clean formulas  
-3. **Good test coverage** - Your tests should verify the binary works
-4. **Regular updates** - Keep your tap updated with new releases
-5. **Documentation** - Make it easy for users to find and use your tap
+1. **Keep formula simple** - Homebrew prefers minimal, clean formulas  
+2. **Good test coverage** - Your tests should verify the binary works
+3. **Automate updates** - Use GitHub Actions to update formula on releases
+4. **Documentation** - Make it easy for users to find installation instructions
 
-## Marketing Your Tap
+## Marketing Your Formula
 
-Once your tap is ready:
+Once your formula is ready:
 
 1. Update your main README with installation instructions
-2. Add Homebrew installation to your documentation
+2. Add Homebrew installation to your documentation  
 3. Tweet about it / share on social media
-4. Consider adding a badge: `[![Homebrew](https://img.shields.io/badge/homebrew-available-brightgreen)](https://github.com/radiosilence/homebrew-nano-web)`
+4. Consider adding a badge: `[![Homebrew](https://img.shields.io/badge/homebrew-available-brightgreen)](https://github.com/radiosilence/nano-web)`
 
 ## Maintenance
 
-- Monitor for new releases and update your formula
-- Respond to issues in your tap repository  
-- Consider automation for formula updates
+- Formula updates automatically via GitHub Actions on releases
+- Respond to issues in your main repository
 - Eventually, once stable, submit to homebrew-core for wider distribution
 
-Your project looks perfect for Homebrew distribution - it's a useful CLI tool, well-documented, and has proper releases. Start with your own tap and work toward homebrew-core submission!
+Your project looks perfect for Homebrew distribution - it's a useful CLI tool, well-documented, and has proper releases with the formula right in your main repo!
