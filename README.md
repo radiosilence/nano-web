@@ -4,7 +4,7 @@
 ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
 ![release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
 ![test](https://github.com/radiosilence/nano-web/actions/workflows/test.yml/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/radiosilence/nano-web)](https://goreportcard.com/report/github.com/radiosilence/nano-web) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Go Report Card](https://goreportcard.com/badge/github.com/radiosilence/nano-web)](https://goreportcard.com/report/github.com/radiosilence/nano-web) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT) [![Homebrew](https://img.shields.io/badge/homebrew-available-brightgreen)](https://github.com/radiosilence/nano-web)
 
 > ⚡ **Hyper-minimal, lightning-fast web server for SPAs and static content**
 
@@ -128,6 +128,12 @@ Enabled by default at `/_health`:
 
 ```bash
 go install github.com/radiosilence/nano-web@latest
+```
+
+#### Install via Homebrew
+
+```bash
+brew install radiosilence/nano-web/nano-web
 ```
 
 #### Usage Examples
