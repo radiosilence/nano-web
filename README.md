@@ -106,13 +106,14 @@ docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
 
 | Variable        | CLI Flag          | Default   | Description                                                 |
 | --------------- | ----------------- | --------- | ----------------------------------------------------------- |
-| `PORT`          | `--port`          | `80`      | Port to listen on                                           |
-| `SPA_MODE`      | `--spa-mode`      | `false`   | Enable SPA mode (serve index.html for 404s)                 |
-| `DEV`           | `--dev`           | `false`   | Enable Dev mode (check for file changes when serving files) |
+| `PUBLIC_DIR`    | `--dir`           | `public`  | Directory to serve static files from                       |
+| `PORT`          | `--port`, `-p`    | `80`      | Port to listen on                                           |
+| `SPA_MODE`      | `--spa`           | `false`   | Enable SPA mode (serve index.html for 404s)                |
+| `DEV`           | `--dev`, `-d`     | `false`   | Enable Dev mode (check for file changes when serving files) |
 | `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Prefix for runtime environment variable injection           |
-| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging level: `debug`, `info`, `warn`, `error`             |
-| `LOG_FORMAT`    | `--log-format`    | `console` | Log format: `json` or `console`                             |
-| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable/disable request logging                              |
+| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging level: `debug`, `info`, `warn`, `error`            |
+| `LOG_FORMAT`    | `--log-format`    | `console` | Log format: `json` or `console`                            |
+| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable/disable request logging                             |
 
 ## 🚑 Health checks
 
@@ -140,20 +141,27 @@ brew install radiosilence/nano-web/nano-web
 
 ```bash
 # Basic usage - serve files from ./public/ on port 80
-nano-web serve
+nano-web
 
-# Serve files from custom directory on port 8080
-nano-web serve ./dist --port 8080
+# Serve files from custom directory on port 8080  
+nano-web ./dist --port 8080
 
-# Enable SPA mode with custom configuration, file reloading, and debug logging (similar to `task dev`)
-nano-web serve ./build --port 3000 --spa-mode --dev --log-level debug
+# Enable SPA mode with custom configuration, file reloading, and debug logging
+nano-web ./build --port 3000 --spa --dev --log-level debug
+
+# Alternative explicit serve command (same as above)
+nano-web serve ./build --port 3000 --spa --dev --log-level debug
 
 # See all available options
 nano-web --help
-nano-web serve --help
 
 # Show version
 nano-web version
+
+# Generate shell completions
+nano-web completion fish > ~/.config/fish/completions/nano-web.fish
+nano-web completion bash > /usr/local/etc/bash_completion.d/nano-web
+nano-web completion zsh > "${fpath[1]}/_nano-web"
 ```
 
 ## 🌰 Nanos/OPS Microkernels

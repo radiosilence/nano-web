@@ -26,11 +26,11 @@ tasks:
   dev:
     desc: "🚀 Run development server"
     deps: [build]
-    cmd: ./{{.PKGNAME}} serve --dev --port 3000 --log-format console --log-level debug
+    cmd: ./{{.PKGNAME}} --dev --port 3000 --log-format console --log-level debug
 
   run:
     desc: "🏃 Run with go run"
-    cmd: go run . serve --port 8080 --log-format console --log-level debug
+    cmd: go run . --port 8080 --log-format console --log-level debug
 
   build:
     desc: "🏗️ Build binary"
@@ -160,7 +160,7 @@ tasks:
         cat > {{.PKGDIR}}/package.manifest << EOF
         {
            "Program":"{{.PKGRELEASE}}/{{.PKGNAME}}",
-           "Args" : ["{{.PKGNAME}}", "serve"],
+           "Args" : ["{{.PKGNAME}}"],
            "Version":"{{.VERSION}}"
         }
         EOF

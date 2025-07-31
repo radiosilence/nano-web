@@ -67,7 +67,7 @@ func refreshRouteIfModified(path string, route *Route) (*Route, error) {
 	return route, nil
 }
 
-func resolveRoute(ctx *fasthttp.RequestCtx, s *ServeCmd, path string) (*Route, error) {
+func resolveRoute(ctx *fasthttp.RequestCtx, s *ServeConfig, path string) (*Route, error) {
 	// Get route
 	route := getRoute(path)
 	if route == nil {
@@ -88,7 +88,7 @@ func resolveRoute(ctx *fasthttp.RequestCtx, s *ServeCmd, path string) (*Route, e
 	return route, nil
 }
 
-func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
+func handler(ctx *fasthttp.RequestCtx, s *ServeConfig) {
 	atomic.AddInt64(&requestCount, 1)
 
 	path := string(ctx.Path())
@@ -155,7 +155,7 @@ func handler(ctx *fasthttp.RequestCtx, s *ServeCmd) {
 	ctx.SetBody(route.Content.Plain)
 }
 
-func startServer(addr string, s *ServeCmd) error {
+func startServer(addr string, s *ServeConfig) error {
 	server := &fasthttp.Server{
 		Handler: func(ctx *fasthttp.RequestCtx) {
 			start := time.Now()
