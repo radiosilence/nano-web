@@ -58,4 +58,4 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
 
 # Run the binary
-ENTRYPOINT ["/nano-web", "serve", "public"]
+ENTRYPOINT ["/nano-web", "public"]
