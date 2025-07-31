@@ -57,10 +57,16 @@ class NanoWeb < Formula
   def caveats
     <<~EOS
       To start nano-web:
+        nano-web [directory]
+        
+      Alternative explicit command:
         nano-web serve [directory]
       
       For SPA mode:
-        nano-web serve --spa-mode [directory]
+        nano-web --spa [directory]
+      
+      Generate shell completions:
+        nano-web completion [bash|zsh|fish|powershell]
       
       See 'nano-web --help' for all options.
     EOS
@@ -172,6 +178,7 @@ class NanoWeb < Formula
   test do
     assert_match version.to_s, shell_output("#{bin}/nano-web version")
     assert_match "serve", shell_output("#{bin}/nano-web serve --help")
+    assert_match "completion", shell_output("#{bin}/nano-web --help")
   end
 end
 ```

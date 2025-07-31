@@ -199,13 +199,13 @@ jobs:
             wget https://github.com/radiosilence/nano-web/releases/download/${{ steps.version.outputs.version }}/nano-web-linux-amd64.tar.gz
             tar -xzf nano-web-linux-amd64.tar.gz
             chmod +x nano-web-linux-amd64
-            ./nano-web-linux-amd64 serve --help
+            ./nano-web-linux-amd64 --help
             ```
 
             #### Windows
             ```powershell
             # Download and extract nano-web-windows-amd64.zip
-            # Run nano-web-windows-amd64.exe serve --help
+            # Run nano-web-windows-amd64.exe --help
             ```
 
             ## What's New
