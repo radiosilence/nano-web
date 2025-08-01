@@ -104,7 +104,7 @@ docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
 | Variable        | CLI Flag          | Default   | Description                                                 |
 | --------------- | ----------------- | --------- | ----------------------------------------------------------- |
 | `PUBLIC_DIR`    | `--dir`           | `public`  | Directory to serve static files from                       |
-| `PORT`          | `--port`, `-p`    | `80`      | Port to listen on                                           |
+| `PORT`          | `--port`, `-p`    | `3000`    | Port to listen on                                           |
 | `SPA_MODE`      | `--spa`           | `false`   | Enable SPA mode (serve index.html for 404s)                |
 | `DEV`           | `--dev`, `-d`     | `false`   | Enable Dev mode (check for file changes when serving files) |
 | `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Prefix for runtime environment variable injection           |
@@ -137,7 +137,7 @@ brew install radiosilence/nano-web/nano-web
 #### Usage Examples
 
 ```bash
-# Serve files from ./public/ on port 80
+# Serve files from ./public/ on port 3000
 nano-web serve
 
 # Serve files from custom directory on port 8080  

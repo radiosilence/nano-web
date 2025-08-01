@@ -30,7 +30,7 @@ tasks:
 
   run:
     desc: "🏃 Run with go run"
-    cmd: go run . --port 8080 --log-format console --log-level debug
+    cmd: go run . --port 3000 --log-format console --log-level debug
 
   build:
     desc: "🏗️ Build binary"
@@ -127,7 +127,7 @@ tasks:
   docker-run:
     desc: "🚢 Run Docker container"
     deps: [docker-build]
-    cmd: docker run --rm -p 8080:8080 -e PORT=8080 {{.PKGNAME}}:latest
+    cmd: docker run --rm -p 3000:3000 -e PORT=3000 {{.PKGNAME}}:latest
 
   release-local:
     desc: "🚀 Create local release"

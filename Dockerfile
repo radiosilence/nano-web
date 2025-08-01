@@ -36,7 +36,7 @@ FROM scratch
 COPY --from=builder /build/nano-web /nano-web
 
 # Set default environment variables
-ENV PORT=80
+ENV PORT=3000
 ENV SPA_MODE=0
 ENV LOG_LEVEL=info
 ENV LOG_FORMAT=json
