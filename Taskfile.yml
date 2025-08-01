@@ -275,7 +275,10 @@ tasks:
         git push origin "$NEW_TAG"
 
         echo "Release $NEW_TAG created and pushed!"
-        echo "GitHub Actions will build and create the release automatically."
+        echo "📡 Publishing to Go module proxy..."
+        GOPROXY=proxy.golang.org go list -m github.com/radiosilence/nano-web@$NEW_TAG
+        echo "📦 Version $NEW_VERSION is now live and published!"
+        echo "GitHub Actions will build the release and update Homebrew automatically."
 
   ci:
     desc: "🤖 Run CI pipeline"

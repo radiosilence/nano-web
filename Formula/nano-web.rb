@@ -1,7 +1,7 @@
 class NanoWeb < Formula
-  desc "Hyper-minimal, lightning-fast web server for SPAs and static content"
+  desc "Static file server for SPAs and static content"
   homepage "https://github.com/radiosilence/nano-web"
-  version "0.8.0"
+  version "0.10.1"
   license "MIT"
 
   on_macos do
