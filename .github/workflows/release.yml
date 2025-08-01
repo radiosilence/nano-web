@@ -225,3 +225,56 @@ jobs:
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📋 Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix if present
+          VERSION=${VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: 🍺 Update Homebrew formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Updating Homebrew formula to version $VERSION..."
+          
+          # Download and calculate checksums for required platforms
+          DARWIN_AMD64_SHA=$(curl -sL "https://github.com/radiosilence/nano-web/releases/download/v$VERSION/nano-web-darwin-amd64.tar.gz" | sha256sum | cut -d' ' -f1)
+          DARWIN_ARM64_SHA=$(curl -sL "https://github.com/radiosilence/nano-web/releases/download/v$VERSION/nano-web-darwin-arm64.tar.gz" | sha256sum | cut -d' ' -f1)
+          LINUX_AMD64_SHA=$(curl -sL "https://github.com/radiosilence/nano-web/releases/download/v$VERSION/nano-web-linux-amd64.tar.gz" | sha256sum | cut -d' ' -f1)
+          LINUX_ARM64_SHA=$(curl -sL "https://github.com/radiosilence/nano-web/releases/download/v$VERSION/nano-web-linux-arm64.tar.gz" | sha256sum | cut -d' ' -f1)
+          
+          # Update the formula file
+          sed -i "s/version \".*\"/version \"$VERSION\"/" Formula/nano-web.rb
+          sed -i "s|download/v[^/]*/|download/v$VERSION/|g" Formula/nano-web.rb
+          
+          # Update SHA256 hashes for each platform
+          awk -v ver="$VERSION" -v amd64_sha="$DARWIN_AMD64_SHA" -v arm64_sha="$DARWIN_ARM64_SHA" -v linux_amd64_sha="$LINUX_AMD64_SHA" -v linux_arm64_sha="$LINUX_ARM64_SHA" '
+          /darwin-amd64\.tar\.gz/ { print; getline; gsub(/sha256 "[^"]*"/, "sha256 \"" amd64_sha "\""); print; next }
+          /darwin-arm64\.tar\.gz/ { print; getline; gsub(/sha256 "[^"]*"/, "sha256 \"" arm64_sha "\""); print; next }
+          /linux-amd64\.tar\.gz/ { print; getline; gsub(/sha256 "[^"]*"/, "sha256 \"" linux_amd64_sha "\""); print; next }
+          /linux-arm64\.tar\.gz/ { print; getline; gsub(/sha256 "[^"]*"/, "sha256 \"" linux_arm64_sha "\""); print; next }
+          { print }
+          ' Formula/nano-web.rb > Formula/nano-web.rb.tmp && mv Formula/nano-web.rb.tmp Formula/nano-web.rb
+
+      - name: 📝 Commit and push formula update
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add Formula/nano-web.rb
+          git commit -m "🍺 Update Homebrew formula to v$VERSION" || exit 0
+          git push
