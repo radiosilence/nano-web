@@ -29,41 +29,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "nano-web [directory]",
+	Use:   "nano-web",
 	Short: "Ultra-fast static file server built with Go",
 	Long:  "🔥 Ultra-fast static file server built with Go\nRepository: https://github.com/radiosilence/nano-web",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) > 0 {
-			publicDir = args[0]
-		}
-		
-		// Setup logging
-		setupLogging(logLevel, logFormat)
-
-		// Get app environment variables
-		appEnv = getAppEnv(configPrefix)
-
-		// Populate routes
-		err := populateRoutes(publicDir)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to populate routes")
-			return err
-		}
-
-		// Start server
-		addr := ":" + strconv.Itoa(port)
-		return startServer(addr, &ServeConfig{
-			PublicDir:    publicDir,
-			Port:         port,
-			Dev:          dev,
-			SpaMode:      spaMode,
-			ConfigPrefix: configPrefix,
-			LogLevel:     logLevel,
-			LogFormat:    logFormat,
-			LogRequests:  logRequests,
-		})
-	},
 }
 
 var serveCmd = &cobra.Command{
@@ -208,11 +176,6 @@ func init() {
 	rootCmd.RegisterFlagCompletionFunc("log-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"json", "console"}, cobra.ShellCompDirectiveDefault
 	})
-
-	// Add directory completion for the root command argument
-	rootCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return nil, cobra.ShellCompDirectiveFilterDirs
-	}
 
 	// Add directory completion for the serve command argument
 	serveCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
