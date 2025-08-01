@@ -11,6 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	DefaultPort = 3000
+)
+
 var appEnv map[string]string
 
 var (
@@ -184,7 +188,7 @@ func init() {
 
 	// Root command flags (also applies to serve command for backward compatibility)
 	rootCmd.Flags().StringVarP(&publicDir, "dir", "", getEnvOrDefault("PUBLIC_DIR", "public"), "Directory to serve")
-	rootCmd.Flags().IntVarP(&port, "port", "p", getEnvIntOrDefault("PORT", 80), "Port to listen on")
+	rootCmd.Flags().IntVarP(&port, "port", "p", getEnvIntOrDefault("PORT", DefaultPort), "Port to listen on")
 	rootCmd.Flags().BoolVarP(&dev, "dev", "d", getEnvBoolOrDefault("DEV", false), "Check/reload files if modified")
 	rootCmd.Flags().BoolVar(&spaMode, "spa", getEnvBoolOrDefault("SPA_MODE", false), "Enable SPA mode (serve index.html for all routes)")
 	rootCmd.Flags().StringVar(&configPrefix, "config-prefix", getEnvOrDefault("CONFIG_PREFIX", "VITE_"), "Environment variable prefix for config injection")
