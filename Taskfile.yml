@@ -216,6 +216,10 @@ tasks:
       - go version
       - echo "Platform {{OS}}/{{ARCH}}"
 
+  update-changelog:
+    desc: "📝 Update CHANGELOG.md with current version"
+    cmd: ./scripts/update-changelog.sh {{.VERSION}}
+
   release:
     desc: "Create and push a semantic version release (usage: task release -- major|minor|patch)"
     silent: true
@@ -266,7 +270,13 @@ tasks:
 
         # Update VERSION file
         echo "$NEW_VERSION" > VERSION
-        git add VERSION
+        
+        # Update changelog
+        echo "📝 Updating changelog..."
+        ./scripts/update-changelog.sh "$NEW_VERSION" "$CURRENT_VERSION"
+        
+        # Commit version and changelog updates
+        git add VERSION CHANGELOG.md
         git commit -m "Bump version to $NEW_VERSION"
 
         # Create and push tag

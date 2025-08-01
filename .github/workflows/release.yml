@@ -148,19 +148,29 @@ jobs:
           done
           ls -la release/
 
-      - name: 📝 Generate changelog
+      - name: 📝 Extract changelog
         id: changelog
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # For manual releases, create a simple changelog
-            echo "changelog=Manual release ${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          VERSION="${{ steps.version.outputs.version }}"
+          VERSION_WITHOUT_V=${VERSION#v}
+          
+          if [ -f "CHANGELOG.md" ]; then
+            # Extract the changelog entry for this version
+            CHANGELOG=$(awk "/^## \[$VERSION_WITHOUT_V\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md | sed '/^$/d')
+            if [ -n "$CHANGELOG" ]; then
+              echo "changelog<<EOF" >> $GITHUB_OUTPUT
+              echo "$CHANGELOG" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            else
+              echo "changelog=No changelog entry found for version $VERSION_WITHOUT_V" >> $GITHUB_OUTPUT
+            fi
           else
-            # For tag pushes, get commits since last tag
+            # Fallback to commit messages if no CHANGELOG.md
             LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
             if [ -n "$LAST_TAG" ]; then
-              CHANGELOG=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD)
+              CHANGELOG=$(git log --oneline --pretty=format:"- %s" $LAST_TAG..HEAD | grep -v "Bump version")
             else
-              CHANGELOG=$(git log --oneline --pretty=format:"- %s" HEAD)
+              CHANGELOG=$(git log --oneline --pretty=format:"- %s" HEAD | grep -v "Bump version")
             fi
             echo "changelog<<EOF" >> $GITHUB_OUTPUT
             echo "$CHANGELOG" >> $GITHUB_OUTPUT
