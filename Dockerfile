@@ -52,10 +52,10 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Set labels for better maintainability
 LABEL org.opencontainers.image.title="nano-web"
-LABEL org.opencontainers.image.description="Hyper-minimal, lightning-fast web server for SPAs and static content"
+LABEL org.opencontainers.image.description="Static file server for SPAs and static content"
 LABEL org.opencontainers.image.vendor="nano-web"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
 
 # Run the binary
-ENTRYPOINT ["/nano-web", "public"]
+ENTRYPOINT ["/nano-web", "serve", "--dir", "/public"]

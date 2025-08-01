@@ -6,32 +6,29 @@
 ![test](https://github.com/radiosilence/nano-web/actions/workflows/test.yml/badge.svg)
 [![Go Report Card](https://goreportcard.com/badge/github.com/radiosilence/nano-web)](https://goreportcard.com/report/github.com/radiosilence/nano-web) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT) [![Homebrew](https://img.shields.io/badge/homebrew-available-brightgreen)](https://github.com/radiosilence/nano-web)
 
-> ⚡ **Hyper-minimal, lightning-fast web server for SPAs and static content**
+Static file server built on [FastHTTP](https://github.com/valyala/fasthttp), designed for containerized deployments and unikernel environments with immutable content.
 
-Built on [FastHTTP](https://github.com/valyala/fasthttp), nano-web is designed for minimal latency. Purpose built for use with containerized deployments/unikernel environments with immutable content, however totally useable as a local CLI server.
+## Features
 
-## ✨ What makes nano-web different
+- Pre-caches files in memory with compression (zstd/brotli/gzip)
+- Small Docker image (<20MB)
+- Runtime environment variable injection
+- Health checks at `/_health`
+- SPA mode with fallback routing
+- Request/response logging with structured JSON output
 
-- 🚄 **Ridiculously low latency** - Pre-caches everything in memory precompressed with zstd/brotli/gzip where appropriate, serves 100k+ requests/second with sub-millisecond latency.
-- 📦 **Tiny footprint** - Tiny (<20MB) Docker image.
-- 🔧 **Runtime environment injection** - Safely inject environment variables at runtime, so you can configure containers without rebuilding if you don't want to do different builds for things, or want to test your prod image against a different environment.
-- 🚑 **Inbuilt Healthchecks** - Available at `/_health`.
-- 🎯 **SPA-mode** - Supports modern single-page applications with fallback routing.
-- ⚡️ **Fast builds** - Building an image from nano-web is extremely fast because it is tiny.
+## Performance
 
-## 📈 Performance
+Files are pre-cached in memory with compression at startup. This trades memory usage for request latency since content is known ahead of time.
 
-nano-web pre-caches everything in memory with compression, which makes it fast. Sure you could rely on filesystem caching to do this, but knowing the content ahead of time allows us just to compress everything and stick it in RAM. Benchmark on a M3 Max 36GB:
-
+Benchmark on M3 Max:
 ```bash
 wrk -d 10 -c 20 -t 10 http://localhost
   1,012,393 requests in 10.10s, 7.12GB read
 Requests/sec: 100,237
 Transfer/sec: 721MB/s
-Latency: 200μs avg (96.93% consistency)
+Latency: 200μs avg
 ```
-
-The trade off is basically to use more memory at startup to do less work on each request due to having predictable content. Generally it shouldn't use that much more RAM than the project by much.
 
 ## 🐳 Docker
 
@@ -140,22 +137,23 @@ brew install radiosilence/nano-web/nano-web
 #### Usage Examples
 
 ```bash
-# Basic usage - serve files from ./public/ on port 80
-nano-web
+# Serve files from ./public/ on port 80
+nano-web serve
 
 # Serve files from custom directory on port 8080  
-nano-web ./dist --port 8080
+nano-web serve --dir ./dist --port 8080
 
-# Enable SPA mode with custom configuration, file reloading, and debug logging
-nano-web ./build --port 3000 --spa --dev --log-level debug
+# Enable SPA mode with file reloading and debug logging
+nano-web serve --dir ./build --port 3000 --spa --dev --log-level debug
 
-# Alternative explicit serve command (same as above)
-nano-web serve ./build --port 3000 --spa --dev --log-level debug
-
-# See all available options
+# See all available commands and options
 nano-web --help
 
-# Show version
+# Get help for specific commands
+nano-web serve --help
+nano-web completion --help
+
+# Show version information
 nano-web version
 
 # Generate shell completions
