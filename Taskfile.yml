@@ -216,56 +216,66 @@ tasks:
       - go version
       - echo "Platform {{OS}}/{{ARCH}}"
 
-  version-bump:
-    desc: "📝 Update version in VERSION file"
-    vars:
-      NEW_VERSION: "{{.CLI_ARGS}}"
-    preconditions:
-      - sh: '[ -n "{{.NEW_VERSION}}" ]'
-        msg: "Please provide a version: task version-bump -- 1.0.1"
+  release:
+    desc: "Create and push a semantic version release (usage: task release -- major|minor|patch)"
+    silent: true
     cmds:
-      - echo "{{.NEW_VERSION}}" > VERSION
-      - echo "Updated VERSION file to {{.NEW_VERSION}}"
+      - |
+        CLI_ARGS="{{.CLI_ARGS}}"
+        VERSION_TYPE=$(echo "$CLI_ARGS" | awk '{print $1}')
+        VERSION_TYPE="${VERSION_TYPE:-patch}"
+        CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-  tag:
-    desc: "🏷️ Create git tag and push (auto-updates version)"
-    vars:
-      TAG: "{{.CLI_ARGS}}"
-      TAG_VERSION:
-        sh: echo "{{.CLI_ARGS}}" | sed 's/^v//'
-    preconditions:
-      - sh: '[ -n "{{.TAG}}" ]'
-        msg: "Please provide a tag: task tag -- v1.0.1 or task tag -- 1.0.1"
-      - sh: "git diff --quiet"
-        msg: "Working directory must be clean before tagging"
-    cmds:
-      - echo "{{.TAG_VERSION}}" > VERSION
-      - git add VERSION
-      - git commit -m "Bump version to {{.TAG_VERSION}}"
-      - git tag -a v{{.TAG_VERSION}} -m "Release v{{.TAG_VERSION}}"
-      - git push origin main
-      - git push origin v{{.TAG_VERSION}}
-      - echo "✅ Successfully created and pushed tag v{{.TAG_VERSION}}"
-      - echo "📡 Publishing to Go module proxy..."
-      - GOPROXY=proxy.golang.org go list -m github.com/radiosilence/nano-web@v{{.TAG_VERSION}}
-      - echo "📦 Version {{.TAG_VERSION}} is now live and published!"
+        if [ -z "$CURRENT_TAG" ]; then
+          CURRENT_VERSION="0.0.0"
+        else
+          CURRENT_VERSION=$(echo "$CURRENT_TAG" | sed 's/^v//')
+        fi
 
-  tag-local:
-    desc: "🏷️ Create local git tag only (no push)"
-    vars:
-      TAG: "{{.CLI_ARGS}}"
-      TAG_VERSION:
-        sh: echo "{{.CLI_ARGS}}" | sed 's/^v//'
-    preconditions:
-      - sh: '[ -n "{{.TAG}}" ]'
-        msg: "Please provide a tag: task tag-local -- v1.0.1"
-    cmds:
-      - echo "{{.TAG_VERSION}}" > VERSION
-      - git add VERSION
-      - git commit -m "Bump version to {{.TAG_VERSION}}"
-      - git tag -a v{{.TAG_VERSION}} -m "Release v{{.TAG_VERSION}}"
-      - echo "Created local tag v{{.TAG_VERSION}}"
-      - echo "Push with git push origin main and git push origin v{{.TAG_VERSION}}"
+        echo "Current version: $CURRENT_VERSION"
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+        # Ensure components are numbers
+        MAJOR=${MAJOR:-0}
+        MINOR=${MINOR:-0}
+        PATCH=${PATCH:-0}
+
+        case "$VERSION_TYPE" in
+          major)
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          minor)
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          patch)
+            PATCH=$((PATCH + 1))
+            ;;
+          *)
+            echo "Usage: task release -- major|minor|patch"
+            exit 1
+            ;;
+        esac
+
+        NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+        NEW_TAG="v$NEW_VERSION"
+
+        echo "Creating release $NEW_TAG (was v$CURRENT_VERSION)"
+
+        # Update VERSION file
+        echo "$NEW_VERSION" > VERSION
+        git add VERSION
+        git commit -m "Bump version to $NEW_VERSION"
+
+        # Create and push tag
+        git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+        git push origin main
+        git push origin "$NEW_TAG"
+
+        echo "Release $NEW_TAG created and pushed!"
+        echo "GitHub Actions will build and create the release automatically."
 
   ci:
     desc: "🤖 Run CI pipeline"
