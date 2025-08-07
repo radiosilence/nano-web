@@ -7,9 +7,9 @@ const VERSION: &str = include_str!("../VERSION");
 
 #[derive(Parser)]
 #[command(name = "nano-web")]
-#[command(about = "🔥 Ultra-fast static file server built with Rust")]
+#[command(about = "Static file server built with Rust")]
 #[command(
-    long_about = "🔥 Ultra-fast static file server built with Rust\nRepository: https://github.com/radiosilence/nano-web"
+    long_about = "Static file server built with Rust\nRepository: https://github.com/radiosilence/nano-web"
 )]
 #[command(version = VERSION)]
 pub struct Cli {
@@ -123,7 +123,7 @@ impl Cli {
             }
             Some(Commands::Version) => {
                 println!("{}", full_version());
-                println!("🔥 Ultra-fast static file server built with Rust");
+                println!("Static file server built with Rust");
                 println!("Repository: https://github.com/radiosilence/nano-web");
                 Ok(())
             }

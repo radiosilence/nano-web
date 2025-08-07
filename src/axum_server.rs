@@ -13,7 +13,7 @@ use tower::ServiceBuilder;
 use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tracing::{debug, info};
 
-use crate::fast_routes::UltraFastServer;
+use crate::server::NanoServer;
 
 #[derive(Clone)]
 pub struct AxumServeConfig {
@@ -27,14 +27,14 @@ pub struct AxumServeConfig {
 
 #[derive(Clone)]
 struct AppState {
-    server: Arc<UltraFastServer>,
+    server: Arc<NanoServer>,
     config: AxumServeConfig,
 }
 
 pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
-    let server = Arc::new(UltraFastServer::new());
+    let server = Arc::new(NanoServer::new());
 
-    // Populate routes using our existing ultra-fast route system
+    // Populate routes using our existing route system
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
 
     let state = AppState {
@@ -49,7 +49,7 @@ pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = TcpListener::bind(&addr).await?;
 
-    info!("Starting ULTRA-FAST AXUM server on {}", addr);
+    info!("Starting server on {}", addr);
     info!("Serving directory: {:?}", config.public_dir);
 
     axum::serve(listener, app).await?;
@@ -125,7 +125,7 @@ async fn serve_file(
         return (StatusCode::BAD_REQUEST, "Bad Request").into_response();
     }
 
-    // Ultra-fast route lookup using our existing system
+    // Route lookup using our existing system
     let mut route = state.server.get_route(&path);
 
     if route.is_none() && !path.ends_with('/') {
@@ -176,7 +176,7 @@ async fn serve_file(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    // Use our ultra-fast compression system with pre-computed compressed files
+    // Use our compression system with pre-computed compressed files
     let (encoding, content) = route.content.get_best_encoding(accept_encoding);
 
     // Build response with optimized headers

@@ -1,6 +1,6 @@
 mod cli;
 mod compression;
-mod fast_routes;
+mod server;
 mod mime_types;
 mod template;
 // mod ultra_server; // Unused - using Axum server instead
