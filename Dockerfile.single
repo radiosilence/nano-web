@@ -2,7 +2,7 @@
 FROM rust:1.84-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev gcc ca-certificates tzdata
+RUN apk add --no-cache musl-dev gcc ca-certificates
 
 # Set working directory
 WORKDIR /build
@@ -12,10 +12,10 @@ COPY Cargo.toml Cargo.lock ./
 COPY src src
 COPY VERSION ./
 
-# Build the binary with maximum optimizations
+# Build the binary with optimizations
 RUN cargo build --release
 
-# Runtime stage - minimal scratch image
+# Runtime stage
 FROM scratch
 
 # Copy CA certificates for HTTPS
@@ -24,27 +24,19 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Copy the binary
 COPY --from=builder /build/target/release/nano-web /nano-web
 
-# Set default environment variables
-ENV PORT=3000
-ENV SPA_MODE=0
-ENV LOG_LEVEL=info
-ENV LOG_FORMAT=json
-ENV LOG_REQUESTS=true
-ENV CONFIG_PREFIX=VITE_
-
-# Create a default public directory
+# Create volume for static files
 VOLUME ["/public"]
 
 # Expose port
-EXPOSE $PORT
+EXPOSE 3000
 
-# Set labels for better maintainability
+# Set labels
 LABEL org.opencontainers.image.title="nano-web"
 LABEL org.opencontainers.image.description="Static file server built with Rust"
-LABEL org.opencontainers.image.vendor="nano-web"
+LABEL org.opencontainers.image.vendor="James Cleveland"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
 
-# Run the binary
+# Run the server
 ENTRYPOINT ["/nano-web"]
 CMD ["serve", "/public"]
