@@ -1,6 +1,6 @@
 [package]
 name = "nano-web"
-version = "0.12.1"
+version = "1.0.0"
 edition = "2021"
 description = "Static file server built with Rust with pre-compressed in-memory caching"
 authors = ["Radio Silence <james@radiosilence.com>"]
