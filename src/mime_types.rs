@@ -7,20 +7,17 @@ pub struct MimeConfig {
     pub mime_type: String,
     pub is_compressible: bool,
     pub is_templatable: bool,
-    pub is_asset: bool,
 }
 
 impl MimeConfig {
     pub fn new(mime_type: String) -> Self {
         let is_compressible = is_compressible(&mime_type);
         let is_templatable = is_templatable(&mime_type);
-        let is_asset = is_asset(&mime_type);
         
         Self {
             mime_type,
             is_compressible,
             is_templatable,
-            is_asset,
         }
     }
 }

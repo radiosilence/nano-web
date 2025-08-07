@@ -161,10 +161,6 @@ impl UltraFastServer {
         self.routes.get(path).map(|entry| entry.value().clone())
     }
     
-    #[inline(always)]
-    pub fn get_mmap(&self, path: &str) -> Option<Arc<Mmap>> {
-        self.static_cache.get(path).map(|entry| entry.value().clone())
-    }
     
     fn file_path_to_url(&self, file_path: &Path, public_dir: &Path) -> Result<Arc<str>> {
         let relative = file_path.strip_prefix(public_dir)?;
@@ -193,24 +189,45 @@ impl UltraFastServer {
     
     fn format_fast_http_date(&self, time: SystemTime) -> String {
         use std::time::UNIX_EPOCH;
+        use std::sync::OnceLock;
+        use std::sync::atomic::{AtomicU64, Ordering};
         
         let duration = time.duration_since(UNIX_EPOCH).unwrap();
         let timestamp = duration.as_secs();
+        let current_minute = timestamp / 60;
         
-        // Pre-computed common timestamps for ultra-fast serving
-        static mut CACHED_TIME: (u64, String) = (0, String::new());
-        static mut LAST_UPDATE: u64 = 0;
+        // Thread-safe cached timestamp formatting
+        static LAST_UPDATE: AtomicU64 = AtomicU64::new(0);
+        static CACHED_TIME: OnceLock<std::sync::Mutex<(u64, String)>> = OnceLock::new();
         
-        unsafe {
-            let current_minute = timestamp / 60;
-            if current_minute != LAST_UPDATE {
-                let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0)
-                    .unwrap_or_default();
-                CACHED_TIME = (current_minute, datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string());
-                LAST_UPDATE = current_minute;
+        let cache = CACHED_TIME.get_or_init(|| std::sync::Mutex::new((0, String::new())));
+        let last_update = LAST_UPDATE.load(Ordering::Acquire);
+        
+        if current_minute != last_update {
+            if let Ok(mut cached) = cache.lock() {
+                // Double-check under lock
+                if current_minute != LAST_UPDATE.load(Ordering::Acquire) {
+                    let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0)
+                        .unwrap_or_default();
+                    cached.0 = current_minute;
+                    cached.1 = datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+                    LAST_UPDATE.store(current_minute, Ordering::Release);
+                }
+                return cached.1.clone();
             }
-            CACHED_TIME.1.clone()
         }
+        
+        // Fallback if lock fails - just format directly
+        if let Ok(cached) = cache.lock() {
+            if cached.0 == current_minute {
+                return cached.1.clone();
+            }
+        }
+        
+        // Final fallback
+        let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0)
+            .unwrap_or_default();
+        datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
     }
 }
 

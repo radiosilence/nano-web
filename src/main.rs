@@ -3,7 +3,7 @@ mod compression;
 mod template;
 mod mime_types;
 mod fast_routes;
-mod ultra_server;
+// mod ultra_server; // Unused - using Axum server instead
 mod axum_server;
 mod security;
 
