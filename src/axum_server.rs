@@ -69,7 +69,7 @@ fn create_router(state: AppState) -> Router {
         )
         .layer(SetResponseHeaderLayer::overriding(
             header::X_FRAME_OPTIONS,
-            "DENY".parse::<axum::http::HeaderValue>().unwrap(),
+            "SAMEORIGIN".parse::<axum::http::HeaderValue>().unwrap(),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::REFERRER_POLICY,

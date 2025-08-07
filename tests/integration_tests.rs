@@ -225,7 +225,7 @@ async fn test_security_headers() {
     // Check security headers
     assert!(headers.contains_key("x-content-type-options"));
     assert!(headers.contains_key("x-frame-options"));
-    assert_eq!(headers.get("x-frame-options").unwrap(), "DENY");
+    assert_eq!(headers.get("x-frame-options").unwrap(), "SAMEORIGIN");
 }
 
 #[tokio::test]
@@ -238,7 +238,7 @@ async fn test_path_traversal_protection() {
     let _server = create_test_server(temp_path, 3008, false, false).await;
     sleep(Duration::from_millis(100)).await;
 
-    // Test path traversal attempts - hidden files should be blocked
+    // Test path traversal attempts - hidden files should be blocked (except .well-known)
     let hidden_file_paths = ["/.env", "/.secret"];
 
     for path in hidden_file_paths {
@@ -256,6 +256,16 @@ async fn test_path_traversal_protection() {
         let response = reqwest::get(&url).await.unwrap();
 
         // These get normalized by HTTP stack and just return 404 (not found)
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {}", path);
+    }
+
+    // Test that .well-known paths are allowed (but return 404 if file doesn't exist)
+    let wellknown_paths = ["/.well-known/security.txt", "/.well-known/acme-challenge/token"];
+    for path in wellknown_paths {
+        let url = format!("http://localhost:3008{}", path);
+        let response = reqwest::get(&url).await.unwrap();
+        
+        // Should return 404 (not found) not 400 (bad request) - meaning path validation passed
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {}", path);
     }
 
