@@ -1,7 +1,7 @@
 use anyhow::Result;
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     routing::get,
     Router,
@@ -80,7 +80,7 @@ fn create_router(state: AppState) -> Router {
     let app = Router::new()
         .route("/_health", get(health_handler))
         .route("/", get(root_handler))
-        .route("/*path", get(file_handler));
+        .fallback(get(file_handler));
 
     if state.config.log_requests {
         app.layer(TraceLayer::new_for_http())
@@ -104,11 +104,12 @@ async fn root_handler(headers: HeaderMap, State(state): State<AppState>) -> impl
 }
 
 async fn file_handler(
-    Path(path): Path<String>,
+    uri: Uri,
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    serve_file(format!("/{}", path), headers, state).await
+    let path = uri.path().to_string();
+    serve_file(path, headers, state).await
 }
 
 async fn serve_file(
@@ -120,7 +121,7 @@ async fn serve_file(
 
     // Security: validate path
     if let Err(e) = crate::security::validate_request_path(&path) {
-        debug!("Path validation failed: {}", e);
+        tracing::warn!("Path validation failed for '{}': {}", path, e);
         return (StatusCode::BAD_REQUEST, "Bad Request").into_response();
     }
 
