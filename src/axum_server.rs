@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::{header, HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     routing::get,
