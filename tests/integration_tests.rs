@@ -260,11 +260,14 @@ async fn test_path_traversal_protection() {
     }
 
     // Test that .well-known paths are allowed (but return 404 if file doesn't exist)
-    let wellknown_paths = ["/.well-known/security.txt", "/.well-known/acme-challenge/token"];
+    let wellknown_paths = [
+        "/.well-known/security.txt",
+        "/.well-known/acme-challenge/token",
+    ];
     for path in wellknown_paths {
         let url = format!("http://localhost:3008{}", path);
         let response = reqwest::get(&url).await.unwrap();
-        
+
         // Should return 404 (not found) not 400 (bad request) - meaning path validation passed
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {}", path);
     }
