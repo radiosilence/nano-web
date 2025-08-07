@@ -31,12 +31,12 @@ pub struct FastRouteHeaders {
 
 pub type FastRoutes = DashMap<Arc<str>, FastRoute, FxBuildHasher>;
 
-pub struct UltraFastServer {
+pub struct NanoServer {
     pub routes: FastRoutes,
     pub static_cache: DashMap<Arc<str>, Arc<Mmap>, FxBuildHasher>,
 }
 
-impl UltraFastServer {
+impl NanoServer {
     pub fn new() -> Self {
         Self {
             routes: DashMap::with_hasher(FxBuildHasher::default()),
@@ -67,7 +67,7 @@ impl UltraFastServer {
         let routes: Vec<_> = file_paths
             .par_iter()
             .filter_map(|(file_path, metadata)| {
-                match self.create_fast_route(file_path, metadata, public_dir, config_prefix) {
+                match self.create_route(file_path, metadata, public_dir, config_prefix) {
                     Ok((url_path, route)) => Some((url_path, route)),
                     Err(e) => {
                         error!("Failed to create route for {:?}: {}", file_path, e);
@@ -93,11 +93,11 @@ impl UltraFastServer {
             }
         }
 
-        info!("Ultra-fast routes populated: {} routes", self.routes.len());
+        info!("Routes populated: {} routes", self.routes.len());
         Ok(())
     }
 
-    fn create_fast_route(
+    fn create_route(
         &self,
         file_path: &Path,
         metadata: &std::fs::Metadata,
@@ -232,7 +232,7 @@ impl UltraFastServer {
 }
 
 // Lock-free atomic operations for route updates in dev mode
-impl UltraFastServer {
+impl NanoServer {
     pub fn refresh_if_modified(
         &self,
         path: &str,
@@ -252,7 +252,7 @@ impl UltraFastServer {
                 let parent_dir = route.path.parent().unwrap();
                 let public_dir = parent_dir.ancestors().last().unwrap();
                 let (_, new_route) =
-                    self.create_fast_route(&route.path, &metadata, public_dir, config_prefix)?;
+                    self.create_route(&route.path, &metadata, public_dir, config_prefix)?;
 
                 // Atomic update
                 self.routes.insert(Arc::from(path), new_route.clone());
