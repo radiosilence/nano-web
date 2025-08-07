@@ -53,21 +53,21 @@ impl CompressedContent {
     }
 }
 
-fn gzip_compress(data: &[u8]) -> Result<Bytes> {
+pub fn gzip_compress(data: &[u8]) -> Result<Bytes> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(data)?;
     let compressed = encoder.finish()?;
     Ok(Bytes::from(compressed))
 }
 
-fn brotli_compress(data: &[u8]) -> Result<Bytes> {
+pub fn brotli_compress(data: &[u8]) -> Result<Bytes> {
     let mut compressed = Vec::new();
     let mut cursor = std::io::Cursor::new(data);
     brotli::BrotliCompress(&mut cursor, &mut compressed, &Default::default())?;
     Ok(Bytes::from(compressed))
 }
 
-fn zstd_compress(data: &[u8]) -> Result<Bytes> {
+pub fn zstd_compress(data: &[u8]) -> Result<Bytes> {
     let compressed = zstd::bulk::compress(data, 3)?;
     Ok(Bytes::from(compressed))
 }

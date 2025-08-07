@@ -1,4 +1,4 @@
-# 🔥 nano-web
+# nano-web
 
 ![publish-image](https://github.com/radiosilence/nano-web/actions/workflows/publish-image.yml/badge.svg)
 ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
@@ -125,9 +125,9 @@ Inject configuration at runtime without rebuilding:
 ```html
 <!-- Your index.html -->
 <script type="module">
-  window.ENV = JSON.parse("{{.EscapedJson}}");
+  window.ENV = JSON.parse("{{EscapedJson}}");
   // or direct injection:
-  window.ENV = {{.Json}};
+  window.ENV = {{Json}};
 </script>
 ```
 
@@ -142,6 +142,13 @@ docker run -e VITE_API_URL=http://localhost:3001 my-app    # dev
 docker run -e VITE_API_URL=https://api.prod.com my-app     # prod
 ```
 
+### Template Engine
+
+Uses MiniJinja template syntax for environment variable injection. Variables available:
+- `{{env.VARIABLE_NAME}}` - Direct variable access  
+- `{{Json}}` - Raw JSON string of all prefixed variables
+- `{{EscapedJson}}` - JSON-escaped for inline JavaScript
+
 ## 🏥 Health Checks
 
 Built-in health endpoint at `/_health`:
@@ -154,7 +161,7 @@ Built-in health endpoint at `/_health`:
 
 Console format (default):
 ```
-2025-01-15T10:30:45Z  INFO nano_web: Starting ULTRA-FAST AXUM server on 0.0.0.0:3000
+2025-01-15T10:30:45Z  INFO nano_web: Starting server on 0.0.0.0:3000
 2025-01-15T10:30:45Z  INFO nano_web: Routes loaded: 15
 ```
 
