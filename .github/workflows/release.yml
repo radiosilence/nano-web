@@ -15,9 +15,32 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint with Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features
+
   publish-crate:
     name: Publish to crates.io
     runs-on: ubuntu-latest
+    needs: test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +57,7 @@ jobs:
   build-binaries:
     name: Build release binaries
     runs-on: ${{ matrix.os }}
+    needs: test
     strategy:
       matrix:
         include:
@@ -102,6 +126,7 @@ jobs:
   build-amd64-release:
     name: Build AMD64 Release Image
     runs-on: ubuntu-latest
+    needs: test
     permissions:
       contents: read
       packages: write
@@ -141,6 +166,7 @@ jobs:
   build-arm64-release:
     name: Build ARM64 Release Image
     runs-on: ubuntu-24.04-arm64
+    needs: test
     permissions:
       contents: read
       packages: write
