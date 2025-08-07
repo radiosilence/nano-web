@@ -4,4 +4,5 @@ pub mod template;
 pub mod mime_types;
 pub mod fast_routes;
 pub mod ultra_server;
+pub mod axum_server;
 pub mod security;
