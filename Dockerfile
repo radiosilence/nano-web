@@ -14,7 +14,7 @@ COPY VERSION ./
 
 # Add target and build the binary with optimizations
 RUN rustup target add x86_64-unknown-linux-musl
-ENV RUSTFLAGS="-C target-cpu=native -C target-feature=+crt-static"
+ENV RUSTFLAGS="-C target-feature=+crt-static"
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Runtime stage
