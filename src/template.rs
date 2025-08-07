@@ -6,7 +6,7 @@ use std::env;
 
 pub fn render_template(content: &str, config_prefix: &str) -> Result<String> {
     let handlebars = Handlebars::new();
-    
+
     // Collect environment variables with the specified prefix
     let mut env_vars = HashMap::new();
     for (key, value) in env::vars() {
@@ -15,16 +15,17 @@ pub fn render_template(content: &str, config_prefix: &str) -> Result<String> {
             env_vars.insert(trimmed_key.to_string(), value);
         }
     }
-    
+
     let json_string = serde_json::to_string(&env_vars)?;
     let escaped_json = json_string.replace('"', "\\\"");
-    
+
     let data = json!({
         "env": env_vars,
         "json": json_string,
         "escapedJson": escaped_json
     });
-    
-    handlebars.render_template(content, &data)
+
+    handlebars
+        .render_template(content, &data)
         .map_err(|e| anyhow::anyhow!("Template rendering error: {}", e))
 }
