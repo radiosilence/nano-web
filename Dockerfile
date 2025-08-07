@@ -1,11 +1,8 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM rust:1.84-alpine AS builder
 
-# Install build dependencies and Task
-RUN apk add --no-cache git ca-certificates tzdata curl
-
-# Install task
-RUN sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d
+# Install build dependencies
+RUN apk add --no-cache musl-dev gcc ca-certificates tzdata
 
 # Create appuser for security
 RUN adduser -D -g '' appuser
@@ -13,27 +10,21 @@ RUN adduser -D -g '' appuser
 # Set working directory
 WORKDIR /build
 
-# Copy go mod files and Taskfile first for better caching
-COPY .git go.mod go.sum Taskfile.yml ./
-
-# Download dependencies using Task
-RUN task deps
-
-# Copy source code and VERSION file
-COPY *.go .
+# Copy Cargo files first for better caching
+COPY Cargo.toml Cargo.lock ./
+COPY src src
+COPY benches benches
 COPY VERSION ./
 
-# Build the binary using Task
-ENV CGO_ENABLED=0
-ENV GOOS=linux
-ENV GOARCH=amd64
-RUN task build
+# Build the binary with maximum optimizations
+ENV RUSTFLAGS="-C target-cpu=native -C target-feature=+crt-static"
+RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Runtime stage
 FROM scratch
 
 # Copy the binary
-COPY --from=builder /build/nano-web /nano-web
+COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/nano-web /nano-web
 
 # Set default environment variables
 ENV PORT=3000
