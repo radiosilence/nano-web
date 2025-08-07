@@ -54,8 +54,8 @@ pub fn validate_request_path(path: &str) -> Result<String> {
             bail!("Invalid characters in path component");
         }
 
-        // Reject hidden files/directories (starting with .)
-        if component.starts_with('.') {
+        // Reject hidden files/directories (starting with .) except .well-known
+        if component.starts_with('.') && component != ".well-known" {
             bail!("Access to hidden files denied");
         }
 
@@ -87,10 +87,13 @@ mod tests {
         assert!(validate_request_path("/").is_ok());
         assert!(validate_request_path("/index.html").is_ok());
         assert!(validate_request_path("/assets/style.css").is_ok());
+        assert!(validate_request_path("/.well-known/acme-challenge/token").is_ok());
+        assert!(validate_request_path("/.well-known/security.txt").is_ok());
 
         // Invalid paths
         assert!(validate_request_path("../etc/passwd").is_err());
         assert!(validate_request_path("/.env").is_err());
+        assert!(validate_request_path("/.secret").is_err());
         assert!(validate_request_path("/path/with/../../traversal").is_err());
         assert!(validate_request_path("/path\0null").is_err());
     }
