@@ -4,6 +4,7 @@ mod template;
 mod mime_types;
 mod fast_routes;
 mod ultra_server;
+mod axum_server;
 mod security;
 
 use anyhow::Result;
