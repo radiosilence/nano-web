@@ -11,7 +11,7 @@ fn bench_route_lookup(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 
     rt.block_on(async {
-        let routes = Arc::new(routes::Routes::new());
+        let routes = Arc::new(server::NanoServer::new());
 
         // Create test routes
         for i in 0..1000 {
@@ -121,8 +121,9 @@ fn bench_memory_allocations(c: &mut Criterion) {
     });
 
     group.bench_function("bytes_clone", |b| {
+        let content_bytes = content.as_bytes().to_vec();
         b.iter(|| {
-            let bytes = Bytes::from(content.as_bytes());
+            let bytes = Bytes::from(content_bytes.clone());
             black_box(bytes.clone());
         });
     });
@@ -199,7 +200,7 @@ fn bench_e2e_latency(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 
     rt.block_on(async {
-        let routes = Arc::new(routes::Routes::new());
+        let routes = Arc::new(server::NanoServer::new());
         let test_content = "<html><body>Hello World</body></html>".as_bytes();
         let route = create_test_route(test_content.to_vec());
         routes.insert("/".to_string(), route).await;
@@ -222,7 +223,7 @@ fn bench_e2e_latency(c: &mut Criterion) {
     });
 }
 
-fn create_test_route(content: Vec<u8>) -> routes::Route {
+fn create_test_route(content: Vec<u8>) -> server::FastRoute {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let mime_config = mime_types::get_mime_config("test.html");
@@ -237,14 +238,14 @@ fn create_test_route(content: Vec<u8>) -> routes::Route {
     let last_modified = "Wed, 21 Oct 2015 07:28:00 GMT".to_string();
     let cache_control = mime_types::get_cache_control(&mime_config.mime_type).to_string();
 
-    let headers = routes::RouteHeaders {
+    let headers = server::FastRouteHeaders {
         content_type: mime_config.mime_type,
         last_modified,
         etag,
         cache_control,
     };
 
-    routes::Route {
+    server::FastRoute {
         content: compressed,
         path: PathBuf::from("test.html"),
         modified,
