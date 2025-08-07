@@ -111,10 +111,14 @@ async fn handle_ultra_fast_connection(
         }
     };
     
-    let (method, raw_path, _) = match parse_request_line_secure(request) {
+    // Debug: log the raw request
+    let first_line = request.lines().next().unwrap_or("").trim();
+    debug!("Raw request line from {}: {:?}", addr, first_line);
+    
+    let (method, raw_path, _) = match parse_request_line_secure(first_line) {
         Ok(parsed) => parsed,
         Err(e) => {
-            debug!("Request parsing error from {}: {}", addr, e);
+            warn!("Request parsing error from {}: {} - Line: {:?}", addr, e, first_line);
             write_error_response(&mut stream, 400, "Bad Request").await?;
             return Ok(());
         }
