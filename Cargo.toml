@@ -2,13 +2,13 @@
 name = "nano-web"
 version = "0.12.1"
 edition = "2021"
-description = "🔥 Ultra-fast static file server built with Rust - 130k+ req/sec with pre-compressed in-memory caching"
+description = "Static file server built with Rust with pre-compressed in-memory caching"
 authors = ["Radio Silence <james@radiosilence.com>"]
 license = "MIT"
 repository = "https://github.com/radiosilence/nano-web"
 homepage = "https://github.com/radiosilence/nano-web"
 documentation = "https://docs.rs/nano-web"
-keywords = ["web", "server", "static", "fast", "http"]
+keywords = ["web", "server", "static", "http", "spa"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 readme = "README.md"
 exclude = ["public/", ".github/", "docs/", "benches/"]
