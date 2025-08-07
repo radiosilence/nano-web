@@ -23,7 +23,6 @@ WORKDIR /build
 # Copy Cargo files first for better caching
 COPY Cargo.toml Cargo.lock ./
 COPY src src
-COPY benches benches
 COPY VERSION ./
 
 # Build the binary with maximum optimizations for target architecture
