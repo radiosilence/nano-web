@@ -1,5 +1,5 @@
 use crate::fast_routes::{UltraFastServer, FastRoute};
-use crate::security::{validate_request_path, parse_request_line_secure, validate_http_header, security_headers, RateLimiter, MAX_REQUEST_SIZE};
+use crate::security::{validate_request_path, parse_request_line_secure, validate_http_header, security_headers, MAX_REQUEST_SIZE};
 use anyhow::Result;
 use bytes::Bytes;
 use std::sync::Arc;
@@ -26,7 +26,6 @@ pub struct UltraServeConfig {
 
 pub struct UltraServerState {
     pub server: Arc<UltraFastServer>,
-    pub rate_limiter: Arc<RateLimiter>,
     pub config: UltraServeConfig,
 }
 
@@ -36,12 +35,10 @@ pub async fn start_ultra_server(config: UltraServeConfig) -> Result<()> {
     // Populate routes
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
     
-    // Initialize rate limiter (1000 requests per minute per IP)
-    let rate_limiter = Arc::new(RateLimiter::new(1000, 60));
+    // No rate limiting for maximum benchmarking performance
     
     let state = Arc::new(UltraServerState {
         server,
-        rate_limiter: Arc::clone(&rate_limiter),
         config,
     });
     
@@ -51,17 +48,9 @@ pub async fn start_ultra_server(config: UltraServeConfig) -> Result<()> {
     info!("Starting ULTRA-FAST SECURE server on {}", addr);
     info!("Serving directory: {:?}", state.config.public_dir);
     info!("Routes loaded: {}", state.server.routes.len());
-    info!("Security: Rate limiting, path validation, security headers enabled");
+    info!("Security: Path validation, security headers enabled");
     
-    // Cleanup task for rate limiter
-    let rate_limiter_cleanup = Arc::clone(&rate_limiter);
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300)); // 5 minutes
-        loop {
-            interval.tick().await;
-            rate_limiter_cleanup.cleanup();
-        }
-    });
+    // No rate limiter cleanup needed
     
     loop {
         let (stream, addr) = listener.accept().await?;
@@ -82,12 +71,6 @@ async fn handle_ultra_fast_connection(
     state: Arc<UltraServerState>,
 ) -> Result<()> {
     let start = Instant::now();
-    
-    // Rate limiting check
-    if !state.rate_limiter.is_allowed(addr.ip()) {
-        write_error_response(&mut stream, 429, "Too Many Requests").await?;
-        return Ok(());
-    }
     
     // Read request with size limits for security
     let mut buffer = vec![0u8; MAX_REQUEST_SIZE.min(8192)];
