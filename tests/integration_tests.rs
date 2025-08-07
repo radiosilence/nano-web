@@ -21,7 +21,9 @@ async fn create_test_server(
     };
 
     tokio::spawn(async move {
-        nano_web::axum_server::start_axum_server(config).await.unwrap();
+        nano_web::axum_server::start_axum_server(config)
+            .await
+            .unwrap();
     })
 }
 
@@ -48,7 +50,9 @@ async fn test_spa_mode_fallback() {
     assert!(body.contains("SPA App"));
 
     // Test that non-existent routes fallback to index.html (SPA behavior)
-    let response = reqwest::get("http://localhost:3001/nonexistent/route").await.unwrap();
+    let response = reqwest::get("http://localhost:3001/nonexistent/route")
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.text().await.unwrap();
     assert!(body.contains("SPA App")); // Should serve index.html
@@ -60,7 +64,11 @@ async fn test_non_spa_mode_404() {
     let temp_path = temp_dir.path();
 
     // Create index.html
-    fs::write(temp_path.join("index.html"), "<html><body>Regular App</body></html>").unwrap();
+    fs::write(
+        temp_path.join("index.html"),
+        "<html><body>Regular App</body></html>",
+    )
+    .unwrap();
 
     // Start server without SPA mode
     let _server = create_test_server(temp_path, 3002, false, false).await;
@@ -71,7 +79,9 @@ async fn test_non_spa_mode_404() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Test that non-existent routes return 404
-    let response = reqwest::get("http://localhost:3002/nonexistent").await.unwrap();
+    let response = reqwest::get("http://localhost:3002/nonexistent")
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
@@ -89,7 +99,9 @@ async fn test_dev_mode_file_reloading() {
     sleep(Duration::from_millis(100)).await;
 
     // Test initial content
-    let response = reqwest::get("http://localhost:3003/test.html").await.unwrap();
+    let response = reqwest::get("http://localhost:3003/test.html")
+        .await
+        .unwrap();
     let body = response.text().await.unwrap();
     assert!(body.contains("Version 1"));
 
@@ -99,7 +111,9 @@ async fn test_dev_mode_file_reloading() {
 
     // Test updated content (dev mode should reload)
     sleep(Duration::from_millis(50)).await;
-    let response = reqwest::get("http://localhost:3003/test.html").await.unwrap();
+    let response = reqwest::get("http://localhost:3003/test.html")
+        .await
+        .unwrap();
     let body = response.text().await.unwrap();
     assert!(body.contains("Version 2"));
 }
@@ -194,12 +208,18 @@ async fn test_security_headers() {
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path();
 
-    fs::write(temp_path.join("test.html"), "<html><body>Test</body></html>").unwrap();
+    fs::write(
+        temp_path.join("test.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
 
     let _server = create_test_server(temp_path, 3007, false, false).await;
     sleep(Duration::from_millis(100)).await;
 
-    let response = reqwest::get("http://localhost:3007/test.html").await.unwrap();
+    let response = reqwest::get("http://localhost:3007/test.html")
+        .await
+        .unwrap();
     let headers = response.headers();
 
     // Check security headers
@@ -221,7 +241,7 @@ async fn test_path_traversal_protection() {
     // Test various path traversal attempts
     let dangerous_paths = [
         "/../../../etc/passwd",
-        "/../../secret.txt", 
+        "/../../secret.txt",
         "/.env",
         "/test/../../../etc/passwd",
     ];
@@ -229,12 +249,14 @@ async fn test_path_traversal_protection() {
     for path in dangerous_paths {
         let url = format!("http://localhost:3008{}", path);
         let response = reqwest::get(&url).await.unwrap();
-        
+
         // Should return 400 Bad Request for dangerous paths
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Path: {}", path);
     }
 
     // But safe paths should work
-    let response = reqwest::get("http://localhost:3008/safe.txt").await.unwrap();
+    let response = reqwest::get("http://localhost:3008/safe.txt")
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }

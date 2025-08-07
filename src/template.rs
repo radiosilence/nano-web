@@ -1,11 +1,11 @@
 use anyhow::Result;
-use minijinja::{Environment, context};
+use minijinja::{context, Environment};
 use std::collections::HashMap;
 use std::env;
 
 pub fn render_template(content: &str, config_prefix: &str) -> Result<String> {
     let jinja = Environment::new();
-    
+
     // Collect environment variables with the specified prefix
     let mut env_vars = HashMap::new();
     for (key, value) in env::vars() {
@@ -20,12 +20,14 @@ pub fn render_template(content: &str, config_prefix: &str) -> Result<String> {
 
     // MiniJinja has better syntax and is more secure by default
     let template = jinja.template_from_str(content)?;
-    
-    template.render(context! {
-        env => env_vars,
-        Json => json_string, 
-        EscapedJson => escaped_json
-    }).map_err(|e| anyhow::anyhow!("Template rendering error: {}", e))
+
+    template
+        .render(context! {
+            env => env_vars,
+            Json => json_string,
+            EscapedJson => escaped_json
+        })
+        .map_err(|e| anyhow::anyhow!("Template rendering error: {}", e))
 }
 
 #[cfg(test)]
@@ -48,14 +50,14 @@ mod tests {
         "#;
 
         let result = render_template(template, "VITE_").unwrap();
-        
+
         // Should include VITE_ prefixed vars
         assert!(result.contains("API_URL"));
         assert!(result.contains("Test App"));
-        
+
         // Should not include non-prefixed vars
         assert!(!result.contains("should_not_appear"));
-        
+
         // Should have valid JSON
         assert!(result.contains("JSON.parse"));
 
@@ -74,7 +76,7 @@ mod tests {
         "#;
 
         let result = render_template(template, "NONEXISTENT_").unwrap();
-        
+
         // Should render empty object
         assert!(result.contains("{}"));
     }
@@ -87,7 +89,7 @@ mod tests {
         let template = r#"<script>window.ENV = JSON.parse("{{EscapedJson}}");</script>"#;
 
         let result = render_template(template, "TEST_").unwrap();
-        
+
         // Should contain the quotes in JSON - MiniJinja handles proper escaping
         assert!(result.contains("quotes"));
         assert!(result.contains("path/to/file"));
@@ -100,7 +102,7 @@ mod tests {
     #[test]
     fn test_template_invalid_syntax() {
         let template = "{{invalid.template.syntax}}";
-        
+
         // Should return error for invalid template
         assert!(render_template(template, "VITE_").is_err());
     }
