@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
-use std::env;
 use std::path::PathBuf;
 
 const DEFAULT_PORT: u16 = 3000;
@@ -103,8 +102,8 @@ impl Cli {
                 dev, 
                 spa, 
                 config_prefix, 
-                log_level, 
-                log_format, 
+                log_level: _, 
+                log_format: _, 
                 log_requests 
             }) => {
                 let public_dir = self.dir.clone();
@@ -117,8 +116,6 @@ impl Cli {
                     dev: dev || self.dev,
                     spa_mode: spa || self.spa,
                     config_prefix: config_prefix.unwrap_or(self.config_prefix),
-                    log_level: log_level.unwrap_or(self.log_level),
-                    log_format: log_format.unwrap_or(self.log_format),
                     log_requests: log_requests.unwrap_or(self.log_requests),
                 };
                 
@@ -151,8 +148,6 @@ struct FinalServeConfig {
     dev: bool,
     spa_mode: bool,
     config_prefix: String,
-    log_level: String,
-    log_format: String,
     log_requests: bool,
 }
 
@@ -183,20 +178,3 @@ fn generate_completion(shell: clap_complete::Shell) {
     generate(shell, &mut cmd, "nano-web", &mut io::stdout());
 }
 
-pub fn get_env_or_default(key: &str, default: &str) -> String {
-    env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
-pub fn get_env_int_or_default(key: &str, default: u16) -> u16 {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
-
-pub fn get_env_bool_or_default(key: &str, default: bool) -> bool {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
