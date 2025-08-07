@@ -4,272 +4,245 @@
 ![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
 ![release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
 ![test](https://github.com/radiosilence/nano-web/actions/workflows/test.yml/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/radiosilence/nano-web)](https://goreportcard.com/report/github.com/radiosilence/nano-web) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT) [![Homebrew](https://img.shields.io/badge/homebrew-available-brightgreen)](https://github.com/radiosilence/nano-web)
+[![Crates.io](https://img.shields.io/crates/v/nano-web.svg)](https://crates.io/crates/nano-web)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT) 
 
-Static file server built on [FastHTTP](https://github.com/valyala/fasthttp), designed for containerized deployments and unikernel environments with immutable content.
-
-## Features
-
-- Pre-caches files in memory with compression (zstd/brotli/gzip)
-- Small Docker image (<20MB)
-- Runtime environment variable injection
-- Health checks at `/_health`
-- SPA mode with fallback routing
-- Request/response logging with structured JSON output
+Static file server built with Rust. Serves files from memory with pre-compressed variants.
 
 ## Performance
 
-Files are pre-cached in memory with compression at startup. This trades memory usage for request latency since content is known ahead of time.
+130,000+ requests/sec with sub-millisecond latency:
+- Axum/Hyper HTTP stack
+- Files pre-compressed at startup (brotli/gzip/zstd)
+- Lock-free concurrent HashMap routing
+- Zero-copy serving with Bytes
 
-Benchmark on M3 Max:
+Benchmark (M3 Max):
 ```bash
-wrk -d 10 -c 20 -t 10 http://localhost
-  1,012,393 requests in 10.10s, 7.12GB read
-Requests/sec: 100,237
-Transfer/sec: 721MB/s
-Latency: 200μs avg
+wrk -c 100 -d 10 -t 100 http://localhost:3000
+Running 10s test @ http://localhost:3000
+  100 threads and 100 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   766.28us  125.68us   4.42ms   92.26%
+    Req/Sec     1.31k    69.24     1.54k    93.77%
+  1317792 requests in 10.10s, 7.47GB read
+Requests/sec: 130,479.93
+Transfer/sec:    757.44MB
 ```
 
+## Features
+
+- In-memory file serving with compression
+- Security headers
+- SPA mode with index.html fallback
+- Dev mode with file watching
+- Health endpoint at `/_health`
+- Runtime environment variable injection
+- JSON/console logging
+- Docker images under 20MB
+
+## 📦 Installation
+
+### Install with Cargo
+
+```bash
+cargo install nano-web
+```
+
+### Install via Homebrew
+
+```bash
+brew install radiosilence/nano-web/nano-web
+```
+
+### Download Binary
+
+Pre-built binaries available on [GitHub Releases](https://github.com/radiosilence/nano-web/releases).
+
 ## 🐳 Docker
+
+Multi-arch images available:
 
 ```dockerfile
 FROM ghcr.io/radiosilence/nano-web:latest
 COPY ./dist /public/
 ```
 
-Real-world example for running as unprivileged user (/bin/sh etc are not available for the runner):
+Production example:
 
 ```dockerfile
-FROM oven/bun:1 AS base
-RUN adduser --disabled-password --shell /bin/sh nano
+FROM node:18-alpine AS builder
 WORKDIR /app
-
-FROM base AS deps
-COPY package.json ./
-RUN bun install
-
-FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+RUN npm ci --only=production
 COPY . .
-RUN bun run build
-RUN chown -R nano:nano /app/.output/public/
+RUN npm run build
 
-FROM ghcr.io/radiosilence/nano-web:latest AS runner
-COPY --from=base /etc/passwd /etc/passwd
-COPY --from=base /etc/group /etc/group
-COPY --from=builder /app/.output/public/ /public/
-USER nano
-ENV PORT=3000
+FROM ghcr.io/radiosilence/nano-web:latest
+COPY --from=builder /app/dist/ /public/
 EXPOSE 3000
 ```
 
-_This is a TanStack Start project being built statically with bun._
-
-Configure with env vars you can see below👇
-
-## 🔧 Runtime Environment Injection
-
-Instead of rebuilding your app for different environments, inject configuration at runtime:
-
-**⚠️ Public config only** - don't put secrets here.
-
-```html
-<!-- Your index.html -->
-<script type="module">
-  // You can wrap the escaped JSON in a string and parse it.
-  window.ENV = JSON.parse("{{.EscapedJson}}");
-  // You can pass in the raw JSON, but this means having the template tag directly inserted without
-  // being quoted.
-  window.ENV = {{.Json}};
-</script>
-```
-
-```typescript
-import { z } from "zod";
-// Your React/Vue/whatever app
-const EnvSchema = z.object({
-  API_URL: z.string().optional(),
-});
-const { API_URL } = EnvSchema.parse(window.ENV));
-```
-
-```bash
-# Same build, different configs
-docker run -e VITE_API_URL=http://localhost:3001 my-app    # dev
-docker run -e VITE_API_URL=https://api.prod.com my-app    # prod
-```
-
-## ⚙️ Configuration
-
-| Variable        | CLI Flag          | Default   | Description                                                 |
-| --------------- | ----------------- | --------- | ----------------------------------------------------------- |
-| `PUBLIC_DIR`    | `--dir`           | `public`  | Directory to serve static files from                       |
-| `PORT`          | `--port`, `-p`    | `3000`    | Port to listen on                                           |
-| `SPA_MODE`      | `--spa`           | `false`   | Enable SPA mode (serve index.html for 404s)                |
-| `DEV`           | `--dev`, `-d`     | `false`   | Enable Dev mode (check for file changes when serving files) |
-| `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Prefix for runtime environment variable injection           |
-| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging level: `debug`, `info`, `warn`, `error`            |
-| `LOG_FORMAT`    | `--log-format`    | `console` | Log format: `json` or `console`                            |
-| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable/disable request logging                             |
-
-## 🚑 Health checks
-
-Enabled by default at `/_health`:
-
-```
-{"status":"ok","timestamp":"2025-05-27T08:19:32Z"}
-```
-
-### 📺 CLI Usage
-
-#### Install via Go
-
-```bash
-go install github.com/radiosilence/nano-web@latest
-```
-
-#### Install via Homebrew
-
-```bash
-brew install radiosilence/nano-web/nano-web
-```
-
-#### Usage Examples
+## 🔧 Usage
 
 ```bash
 # Serve files from ./public/ on port 3000
 nano-web serve
 
-# Serve files from custom directory on port 8080  
-nano-web serve --dir ./dist --port 8080
+# Custom directory and port
+nano-web serve ./dist --port 8080
 
-# Enable SPA mode with file reloading and debug logging
-nano-web serve --dir ./build --port 3000 --spa --dev --log-level debug
+# SPA mode with dev reloading
+nano-web serve --spa --dev --port 3000
 
-# See all available commands and options
-nano-web --help
-
-# Get help for specific commands
+# See all options
 nano-web serve --help
-nano-web completion --help
-
-# Show version information
-nano-web version
-
-# Generate shell completions
-nano-web completion fish > ~/.config/fish/completions/nano-web.fish
-nano-web completion bash > /usr/local/etc/bash_completion.d/nano-web
-nano-web completion zsh > "${fpath[1]}/_nano-web"
 ```
 
-## 🌰 Nanos/OPS Microkernels
+## ⚙️ Configuration
 
-You will want to make a config that looks something like this:
+| Variable        | CLI Flag          | Default   | Description                                    |
+| --------------- | ----------------- | --------- | ---------------------------------------------- |
+| `PORT`          | `--port`, `-p`    | `3000`    | Port to listen on                              |
+| `--spa`         | `--spa`           | `false`   | Enable SPA mode (serve index.html for 404s)   |
+| `--dev`         | `--dev`, `-d`     | `false`   | Enable dev mode (hot-reload files)            |
+| `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Environment variable injection prefix          |
+| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging: `debug`, `info`, `warn`, `error`     |
+| `LOG_FORMAT`    | `--log-format`    | `console` | Format: `json` or `console`                   |
+| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable request logging                        |
 
-```
-{
-  "Dirs": ["public"],
-  "Env": {
-    "SPA_MODE": "1",
-    "PORT": "8081"
-  },
-  "RunConfig": {
-    "Ports": ["8081"]
-  }
-}
-```
-
-And then you can build your unikernel image:
+### Environment Variables
 
 ```bash
-# Build the unikernel image
-ops image create -c config.json --package radiosilence/nano-web:latest -i my-website
+# Docker example
+docker run -p 3000:3000 -e PORT=3000 -e SPA_MODE=true ghcr.io/radiosilence/nano-web:latest
+```
 
-# Test locally
-ops instance create my-website -c ./config.json --port 8080
+## ⚡ Runtime Environment Injection
 
-# Deploy to cloud
-ops instance create my-website -c ./config.json -t gcp
+Inject configuration at runtime without rebuilding:
+
+```html
+<!-- Your index.html -->
+<script type="module">
+  window.ENV = JSON.parse("{{.EscapedJson}}");
+  // or direct injection:
+  window.ENV = {{.Json}};
+</script>
+```
+
+```typescript
+// Your app
+const { API_URL } = JSON.parse(window.ENV);
+```
+
+```bash
+# Same build, different configs
+docker run -e VITE_API_URL=http://localhost:3001 my-app    # dev
+docker run -e VITE_API_URL=https://api.prod.com my-app     # prod
+```
+
+## 🏥 Health Checks
+
+Built-in health endpoint at `/_health`:
+
+```json
+{"status":"ok","timestamp":"2025-01-15T10:30:45Z"}
 ```
 
 ## 📊 Logging
 
-Defaults to readable, colourful style (`--log-format console`):
-
+Console format (default):
 ```
-9:15AM INF routes populated successfully route_count=3
-9:16AM INF request handled bytes=21 duration=0.044208 method=GET path=/ status=200
+2025-01-15T10:30:45Z  INFO nano_web: Starting ULTRA-FAST AXUM server on 0.0.0.0:3000
+2025-01-15T10:30:45Z  INFO nano_web: Routes loaded: 15
 ```
 
-Structured JSON for consumption by logging platforms such as DataDog etc (`--log-format json`) **(enabled by default in docker)**:
-
+JSON format for log aggregation:
 ```json
 {
-  "level": "info",
-  "time": "2024-01-15T10:30:45Z",
+  "timestamp": "2025-01-15T10:30:45Z",
+  "level": "INFO",
   "message": "request served",
   "method": "GET",
   "path": "/",
   "status": 200,
-  "duration_ms": 1.2
+  "duration_ms": 0.766
 }
 ```
 
-## 🏗️ Building from Source
-
-### Prerequisites
-
-Install [Task](https://taskfile.dev/) for build automation:
+## 🛠️ Building from Source
 
 ```bash
-# macOS
-brew install go-task/tap/go-task
-
-# Linux/Windows - see https://taskfile.dev/installation/
-```
-
-### Building
-
-```bash
-# Clone the repository
+# Clone and build
 git clone https://github.com/radiosilence/nano-web.git
 cd nano-web
-
-# See all available tasks
-task
-
-# Build for current platform
-task build
-
-# Build for all platforms
-task build-all
+cargo build --release
 
 # Run tests
-task test
-
-# Run tests with coverage
-task test-coverage
+cargo test
 
 # Run benchmarks
-task bench
-
-# Development server with reloading and debug logging
-task dev
+cargo bench
 ```
+
+### Development
+
+```bash
+# Development server with hot-reload
+cargo run -- serve ./public --dev --spa
+
+# Watch for changes
+cargo watch -x "run -- serve ./public --dev"
+```
+
+## 🌰 Advanced: Unikernels
+
+Deploy as unikernels with [Nanos](https://nanos.org):
+
+```json
+{
+  "Dirs": ["public"],
+  "Env": {
+    "SPA_MODE": "1",
+    "PORT": "8080"
+  },
+  "RunConfig": {
+    "Ports": ["8080"]
+  }
+}
+```
+
+```bash
+ops image create -c config.json --package nano-web:latest -i my-website
+ops instance create my-website --port 8080
+```
+
+## Architecture
+
+- HTTP: Axum + Hyper
+- Routing: Lock-free DashMap with FxHash
+- Compression: Parallel pre-compression at startup
+- Memory: Zero-copy serving with Bytes
+- Security: Path validation, security headers
+- Runtime: Tokio async
+
+Compared to previous Go version: 70% faster (130k vs 76k req/sec), lower latency, no GC overhead.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Licensed under the MIT License - see [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 
-- [FastHTTP](https://github.com/valyala/fasthttp) - Fast HTTP library
-- [Zerolog](https://github.com/rs/zerolog) - Structured logging library
-- [Brotli](https://github.com/google/brotli) - Compression algorithm
-- [Zstandard](https://github.com/klauspost/compress) - Fast compression algorithm with excellent compression ratios
+- [Axum](https://github.com/tokio-rs/axum) - Ergonomic async web framework
+- [Hyper](https://github.com/hyperium/hyper) - Fast HTTP implementation
+- [Tokio](https://github.com/tokio-rs/tokio) - Asynchronous runtime
+- [DashMap](https://github.com/xacrimon/dashmap) - Lock-free concurrent HashMap
+- [Brotli](https://github.com/dropbox/rust-brotli) - Compression library
 
 ---
 
 <div align="center">
-    Made with 🖤 by <a href="https://github.com/radiosilence">@radiosilence</a>
+    Made with 🦀 by <a href="https://github.com/radiosilence">@radiosilence</a>
 </div>

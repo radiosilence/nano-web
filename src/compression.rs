@@ -15,7 +15,7 @@ pub struct CompressedContent {
 impl CompressedContent {
     pub fn new(content: Vec<u8>, should_compress: bool) -> Result<Self> {
         let plain = Bytes::from(content);
-        
+
         if !should_compress || plain.len() < 1024 {
             return Ok(Self {
                 plain,
@@ -24,17 +24,14 @@ impl CompressedContent {
                 zstd: None,
             });
         }
-        
+
         // Parallel compression for maximum speed
         let plain_ref = &plain;
         let (gzip, (brotli, zstd)) = rayon::join(
             || gzip_compress(plain_ref),
-            || rayon::join(
-                || brotli_compress(plain_ref),
-                || zstd_compress(plain_ref)
-            )
+            || rayon::join(|| brotli_compress(plain_ref), || zstd_compress(plain_ref)),
         );
-        
+
         Ok(Self {
             plain,
             gzip: Some(gzip?),
@@ -42,7 +39,7 @@ impl CompressedContent {
             zstd: Some(zstd?),
         })
     }
-    
+
     pub fn get_best_encoding(&self, accept_encoding: &str) -> (&'static str, &Bytes) {
         if accept_encoding.contains("zstd") && self.zstd.is_some() {
             ("zstd", self.zstd.as_ref().unwrap())
