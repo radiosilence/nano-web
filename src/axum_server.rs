@@ -6,7 +6,7 @@ use axum::{
     routing::get,
     Router,
 };
-use chrono;
+use chrono::Utc;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -93,7 +93,7 @@ fn create_router(state: AppState) -> Router {
 }
 
 async fn health_handler() -> impl IntoResponse {
-    let timestamp = chrono::Utc::now().to_rfc3339();
+    let timestamp = Utc::now().to_rfc3339();
     let response = format!(r#"{{"status":"ok","timestamp":"{}"}}"#, timestamp);
     (
         StatusCode::OK,
