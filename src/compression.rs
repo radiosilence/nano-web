@@ -62,7 +62,8 @@ fn gzip_compress(data: &[u8]) -> Result<Bytes> {
 
 fn brotli_compress(data: &[u8]) -> Result<Bytes> {
     let mut compressed = Vec::new();
-    brotli::BrotliCompress(&mut data.as_ref(), &mut compressed, &Default::default())?;
+    let mut cursor = std::io::Cursor::new(data);
+    brotli::BrotliCompress(&mut cursor, &mut compressed, &Default::default())?;
     Ok(Bytes::from(compressed))
 }
 

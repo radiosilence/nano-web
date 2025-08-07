@@ -36,6 +36,12 @@ pub struct NanoServer {
     pub static_cache: DashMap<Arc<str>, Arc<Mmap>, FxBuildHasher>,
 }
 
+impl Default for NanoServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NanoServer {
     pub fn new() -> Self {
         Self {
@@ -45,7 +51,7 @@ impl NanoServer {
     }
 
     pub fn populate_routes(&self, public_dir: &Path, config_prefix: &str) -> Result<()> {
-        debug!("Starting ultra-fast route population from {:?}", public_dir);
+        debug!("Starting route population from {:?}", public_dir);
 
         // Collect all file paths first
         let file_paths: Vec<_> = WalkDir::new(public_dir)

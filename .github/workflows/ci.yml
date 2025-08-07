@@ -2,10 +2,10 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main, develop, rust-rewrite ]
-    tags: [ 'v*' ]
+    branches: [main, develop, rust-rewrite]
+    tags: ["v*"]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -17,24 +17,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-          
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        
+
       - name: Check formatting
         run: cargo fmt --all -- --check
-        
+
       - name: Lint with Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-        
+
       - name: Run tests
         run: cargo test --all-features
-        
+
       - name: Run benchmarks (compile only)
         run: cargo bench --no-run
 
@@ -48,7 +48,7 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             name: linux-amd64
-          - os: ubuntu-latest  
+          - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             name: linux-arm64
           - os: macos-latest
@@ -57,20 +57,20 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             name: darwin-arm64
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-          
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-          
+
       - name: Install cross-compilation tools (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -79,12 +79,12 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
             sudo apt-get install -y gcc-aarch64-linux-gnu
           fi
-          
+
       - name: Build binary
         env:
           RUSTFLAGS: "-C target-cpu=generic -C target-feature=+crt-static"
         run: cargo build --release --target ${{ matrix.target }}
-        
+
       - name: Package binary
         run: |
           mkdir -p dist
@@ -94,7 +94,7 @@ jobs:
             cp target/${{ matrix.target }}/release/nano-web dist/nano-web-${{ matrix.name }}
             chmod +x dist/nano-web-${{ matrix.name }}
           fi
-          
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -109,21 +109,21 @@ jobs:
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
+
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -140,7 +140,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             # SHA for any push
             type=sha,prefix={{branch}}-,format=short
-            
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -165,17 +165,17 @@ jobs:
     permissions:
       contents: write
       packages: write
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
-          
+
       - name: Prepare release assets
         run: |
           cd dist
@@ -188,7 +188,7 @@ jobs:
             fi
           done
           ls -la
-          
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -197,7 +197,7 @@ jobs:
           git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD~1)..HEAD >> $GITHUB_OUTPUT
           echo "" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
+
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
@@ -207,37 +207,36 @@ jobs:
             CHANGELOG.md
           body: |
             ## 🚀 What's New
-            
+
             ${{ steps.changelog.outputs.CHANGELOG }}
-            
+
             ## 📦 Docker Images
-            
+
             Multi-architecture images available:
             ```bash
             # Latest release
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-            
-            # Always use ultra-fast server (default)
+
             docker run --rm -p 3000:3000 -v $(pwd)/public:/public ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
             ```
-            
+
             ## 📋 Binary Downloads
-            
+
             | Platform | Architecture | Download |
             |----------|-------------|----------|
             | Linux | x64 | nano-web-linux-amd64.tar.gz |
             | Linux | ARM64 | nano-web-linux-arm64.tar.gz |
             | macOS | x64 | nano-web-darwin-amd64.tar.gz |
             | macOS | ARM64 (Apple Silicon) | nano-web-darwin-arm64.tar.gz |
-            
+
             ## ⚡ Performance Features
-            
+
             - **Ultra-fast by default** - Custom HTTP server for nanosecond latency
-            - **Zero-copy serving** - Memory-mapped files and efficient data structures  
+            - **Zero-copy serving** - Memory-mapped files and efficient data structures
             - **Parallel compression** - gzip/brotli/zstd processed concurrently
             - **Security hardened** - Rate limiting, path validation, security headers
             - **Multi-arch support** - Native ARM64 and x64 binaries
-            
+
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -247,35 +246,35 @@ jobs:
     runs-on: ubuntu-latest
     needs: docker
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/rust-rewrite'
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y wrk apache2-utils hyperfine bc
-          
+
       - name: Pull Docker image
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
-          
+
       - name: Run performance benchmarks
         run: |
           # Create test content
           mkdir -p public
           echo "<html><body>Hello World</body></html>" > public/index.html
           echo "body { color: red; }" > public/style.css
-          
+
           # Start server
           docker run -d --name nano-web-test \
             -p 3000:3000 \
             -v $(pwd)/public:/public \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
-            
+
           # Wait for startup
           sleep 3
-          
+
           # Basic latency test
           echo "## 🚀 Performance Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -285,13 +284,13 @@ jobs:
             --export-markdown latency.md
           cat latency.md >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Throughput test  
+
+          # Throughput test
           echo "### Throughput Test (10 seconds, 100 connections)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           wrk -t4 -c100 -d10s http://localhost:3000/ >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          
+
           # Cleanup
           docker stop nano-web-test
           docker rm nano-web-test

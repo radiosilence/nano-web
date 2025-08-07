@@ -1,9 +1,8 @@
 mod cli;
 mod compression;
-mod server;
 mod mime_types;
+mod server;
 mod template;
-// mod ultra_server; // Unused - using Axum server instead
 mod axum_server;
 mod security;
 
