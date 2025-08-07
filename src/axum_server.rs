@@ -80,7 +80,7 @@ fn create_router(state: AppState) -> Router {
     let app = Router::new()
         .route("/_health", get(health_handler))
         .route("/", get(root_handler))
-        .fallback(get(file_handler));
+        .route("/*path", get(file_handler));
 
     if state.config.log_requests {
         app.layer(TraceLayer::new_for_http())
