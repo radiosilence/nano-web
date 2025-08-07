@@ -22,3 +22,8 @@ dist/
 # OS files
 Thumbs.db
 .task
+
+
+# Added by cargo
+
+/target
