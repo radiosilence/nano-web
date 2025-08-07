@@ -12,12 +12,13 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  docker-branch:
-    name: Docker Build (Branch)
+  build-amd64:
+    name: Build AMD64 Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    if: github.event_name != 'pull_request'
     
     steps:
       - name: Checkout
@@ -27,7 +28,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
         
       - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -37,44 +37,108 @@ jobs:
       - name: Sanitize branch name
         id: branch
         run: |
-          # Convert branch name to valid Docker tag
+          BRANCH_NAME="${{ github.ref_name }}"
+          SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
+          echo "safe_name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
+          
+      - name: Build and push AMD64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.single
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-amd64
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=max,scope=amd64
+
+  build-arm64:
+    name: Build ARM64 Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
+          echo "safe_name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
+          
+      - name: Build and push ARM64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.single
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-arm64
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
+
+  create-manifest:
+    name: Create Multi-Arch Manifest
+    runs-on: ubuntu-latest
+    needs: [build-amd64, build-arm64]
+    permissions:
+      contents: read
+      packages: write
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Sanitize branch name
+        id: branch
+        run: |
           BRANCH_NAME="${{ github.ref_name }}"
           SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
           echo "safe_name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
           echo "timestamp=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
           
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            # Branch name with timestamp for uniqueness
-            type=raw,value=${{ steps.branch.outputs.safe_name }}-${{ steps.branch.outputs.timestamp }}
-            # Branch name with short SHA
-            type=raw,value=${{ steps.branch.outputs.safe_name }}-${{ github.sha }}
-            # Just branch name (overwrites previous builds)
-            type=raw,value=${{ steps.branch.outputs.safe_name }}
-            # PR number for pull requests
-            type=ref,event=pr,prefix=pr-
-          labels: |
-            org.opencontainers.image.title=nano-web
-            org.opencontainers.image.description=Ultra-fast static file server
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.branch=${{ github.ref_name }}
+      - name: Create and push manifest
+        run: |
+          # Create multi-arch manifests
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-arm64
             
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.multi
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-${{ steps.branch.outputs.timestamp }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-arm64
+            
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.branch.outputs.safe_name }}-arm64
           
       - name: Show built images
         if: github.event_name != 'pull_request'
@@ -106,7 +170,7 @@ jobs:
   quick-test:
     name: Quick Docker Test
     runs-on: ubuntu-latest
-    needs: docker-branch
+    needs: create-manifest
     if: github.event_name != 'pull_request'
     
     steps:

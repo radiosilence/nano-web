@@ -1,0 +1,51 @@
+# Single-arch Dockerfile for nano-web (uses native compilation)
+FROM rust:1.84-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev gcc ca-certificates tzdata
+
+# Set working directory
+WORKDIR /build
+
+# Copy Cargo files first for better caching
+COPY Cargo.toml Cargo.lock ./
+COPY src src
+COPY benches benches
+COPY VERSION ./
+
+# Build the binary with maximum optimizations
+RUN cargo build --release
+
+# Runtime stage - minimal scratch image
+FROM scratch
+
+# Copy CA certificates for HTTPS
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy the binary
+COPY --from=builder /build/target/release/nano-web /nano-web
+
+# Set default environment variables
+ENV PORT=3000
+ENV SPA_MODE=0
+ENV LOG_LEVEL=info
+ENV LOG_FORMAT=json
+ENV LOG_REQUESTS=true
+ENV CONFIG_PREFIX=VITE_
+
+# Create a default public directory
+VOLUME ["/public"]
+
+# Expose port
+EXPOSE $PORT
+
+# Set labels for better maintainability
+LABEL org.opencontainers.image.title="nano-web"
+LABEL org.opencontainers.image.description="Static file server built with Rust"
+LABEL org.opencontainers.image.vendor="nano-web"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
+
+# Run the binary
+ENTRYPOINT ["/nano-web"]
+CMD ["serve", "/public"]
