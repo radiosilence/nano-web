@@ -240,11 +240,11 @@ async fn test_path_traversal_protection() {
 
     // Test path traversal attempts - hidden files should be blocked
     let hidden_file_paths = ["/.env", "/.secret"];
-    
+
     for path in hidden_file_paths {
         let url = format!("http://localhost:3008{}", path);
         let response = reqwest::get(&url).await.unwrap();
-        
+
         // Should return 400 Bad Request for hidden files
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Path: {}", path);
     }
@@ -254,7 +254,7 @@ async fn test_path_traversal_protection() {
     for path in normalized_paths {
         let url = format!("http://localhost:3008{}", path);
         let response = reqwest::get(&url).await.unwrap();
-        
+
         // These get normalized by HTTP stack and just return 404 (not found)
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {}", path);
     }
