@@ -15,7 +15,7 @@ RUN apk add --no-cache musl-dev gcc ca-certificates tzdata && \
     *)        echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac && \
     rustup target add ${TARGET} && \
-    echo "TARGET=${TARGET}" > /tmp/target
+    echo "${TARGET}" > /tmp/target
 
 # Set working directory
 WORKDIR /build
