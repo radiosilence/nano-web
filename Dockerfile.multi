@@ -1,18 +1,21 @@
 # Multi-arch Dockerfile for nano-web
 FROM --platform=${BUILDPLATFORM} rust:1.84-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache musl-dev gcc ca-certificates tzdata
-
-# Install cross-compilation targets
+# Install build dependencies and cross-compilation tools
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
 RUN case ${TARGETARCH} in \
-    "amd64")  TARGET=x86_64-unknown-linux-musl ;; \
-    "arm64")  TARGET=aarch64-unknown-linux-musl ;; \
+    "amd64")  apk add --no-cache musl-dev gcc ca-certificates tzdata && \
+              TARGET=x86_64-unknown-linux-musl ;; \
+    "arm64")  apk add --no-cache musl-dev gcc-aarch64-none-linux-gnu ca-certificates tzdata && \
+              TARGET=aarch64-unknown-linux-musl && \
+              export CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc && \
+              export CXX_aarch64_unknown_linux_musl=aarch64-linux-gnu-g++ && \
+              export AR_aarch64_unknown_linux_musl=aarch64-linux-gnu-ar && \
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc ;; \
     *)        echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac && \
     rustup target add ${TARGET}
@@ -29,11 +32,16 @@ COPY VERSION ./
 # Build the binary with maximum optimizations for target architecture
 RUN case ${TARGETARCH} in \
     "amd64")  TARGET=x86_64-unknown-linux-musl && \
-              RUSTFLAGS="-C target-cpu=x86-64-v3 -C target-feature=+crt-static -C codegen-units=1 -C panic=abort" ;; \
+              RUSTFLAGS="-C target-cpu=x86-64-v3 -C target-feature=+crt-static -C codegen-units=1 -C panic=abort" \
+              cargo build --release --target ${TARGET} ;; \
     "arm64")  TARGET=aarch64-unknown-linux-musl && \
-              RUSTFLAGS="-C target-cpu=generic -C target-feature=+crt-static -C codegen-units=1 -C panic=abort" ;; \
+              export CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc && \
+              export CXX_aarch64_unknown_linux_musl=aarch64-linux-gnu-g++ && \
+              export AR_aarch64_unknown_linux_musl=aarch64-linux-gnu-ar && \
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc && \
+              RUSTFLAGS="-C target-cpu=generic -C target-feature=+crt-static -C codegen-units=1 -C panic=abort" \
+              cargo build --release --target ${TARGET} ;; \
     esac && \
-    cargo build --release --target ${TARGET} && \
     cp target/${TARGET}/release/nano-web /nano-web-bin
 
 # Runtime stage - minimal scratch image

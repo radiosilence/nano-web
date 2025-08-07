@@ -95,15 +95,6 @@ mod tests {
         assert!(validate_request_path("/path\0null").is_err());
     }
 
-    #[test]
-    fn test_request_line_parsing() {
-        assert!(parse_request_line_secure("GET / HTTP/1.1").is_ok());
-        assert!(parse_request_line_secure("HEAD /test HTTP/1.0").is_ok());
-        assert!(parse_request_line_secure("OPTIONS * HTTP/1.1").is_ok());
-
-        // Invalid requests
-        assert!(parse_request_line_secure("POST / HTTP/1.1").is_err());
-        assert!(parse_request_line_secure("GET /").is_err());
-        assert!(parse_request_line_secure("INVALID REQUEST").is_err());
-    }
+    // Note: parse_request_line_secure was removed as it's not used in the Axum implementation
+    // The Axum HTTP stack handles request parsing internally
 }
