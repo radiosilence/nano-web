@@ -1,9 +1,6 @@
 # Build stage
 FROM rust:1.84-alpine AS builder
 
-# Get target architecture
-ARG TARGETARCH
-
 # Install build dependencies
 RUN apk add --no-cache musl-dev gcc ca-certificates
 
@@ -15,20 +12,11 @@ COPY Cargo.toml Cargo.lock ./
 COPY src src
 COPY VERSION ./
 
-# Set Rust target based on architecture
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        export RUST_TARGET="x86_64-unknown-linux-musl"; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        export RUST_TARGET="aarch64-unknown-linux-musl"; \
-    fi && \
-    rustup target add $RUST_TARGET && \
-    echo "RUST_TARGET=$RUST_TARGET" > /tmp/rust_target
-
-# Build the binary with optimizations
+# Add musl target for current architecture and build
 ENV RUSTFLAGS="-C target-feature=+crt-static"
-RUN export RUST_TARGET=$(cat /tmp/rust_target | cut -d= -f2) && \
-    cargo build --release --target $RUST_TARGET && \
-    cp target/$RUST_TARGET/release/nano-web /tmp/nano-web
+RUN rustup target add $(rustc -vV | grep host | cut -d' ' -f2 | sed 's/gnu/musl/') && \
+    cargo build --release --target $(rustc -vV | grep host | cut -d' ' -f2 | sed 's/gnu/musl/') && \
+    cp target/$(rustc -vV | grep host | cut -d' ' -f2 | sed 's/gnu/musl/')/release/nano-web /tmp/nano-web
 
 # Runtime stage
 FROM scratch
