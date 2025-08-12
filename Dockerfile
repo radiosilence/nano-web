@@ -12,11 +12,10 @@ COPY Cargo.toml Cargo.lock ./
 COPY src src
 COPY VERSION ./
 
-# Add musl target for current architecture and build
+# Build with static linking for scratch image
 ENV RUSTFLAGS="-C target-feature=+crt-static"
-RUN rustup target add $(rustc -vV | grep host | cut -d' ' -f2 | sed 's/gnu/musl/') && \
-    cargo build --release --target $(rustc -vV | grep host | cut -d' ' -f2 | sed 's/gnu/musl/') && \
-    cp target/$(rustc -vV | grep host | cut -d' ' -f2 | sed 's/gnu/musl/')/release/nano-web /tmp/nano-web
+RUN cargo build --release && \
+    cp target/release/nano-web /tmp/nano-web
 
 # Runtime stage
 FROM scratch
