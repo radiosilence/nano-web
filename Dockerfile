@@ -1,8 +1,13 @@
 # Build stage
-FROM rust:1-alpine AS builder
+FROM rust:1-slim AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev gcc ca-certificates
+RUN apt-get update && apt-get install -y \
+    musl-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add musl target for current architecture
+RUN rustup target add $(uname -m)-unknown-linux-musl
 
 # Set working directory
 WORKDIR /build
@@ -14,8 +19,9 @@ COPY VERSION ./
 
 # Build with static linking and additional optimizations for scratch image
 ENV RUSTFLAGS="-C target-feature=+crt-static -C target-cpu=generic"
-RUN cargo build --release && \
-    cp target/release/nano-web /tmp/nano-web
+RUN TARGET=$(uname -m)-unknown-linux-musl && \
+    cargo build --release --target $TARGET && \
+    cp target/$TARGET/release/nano-web /tmp/nano-web
 
 # Runtime stage
 FROM scratch
