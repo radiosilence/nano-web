@@ -90,13 +90,17 @@ fn create_router(state: AppState) -> Router {
                         path = %request.uri().path(),
                     )
                 })
-                .on_response(|response: &axum::response::Response, latency: std::time::Duration, _span: &tracing::Span| {
-                    tracing::info!(
-                        status = %response.status(),
-                        duration_ms = %latency.as_millis(),
-                        "request completed"
-                    );
-                }),
+                .on_response(
+                    |response: &axum::response::Response,
+                     latency: std::time::Duration,
+                     _span: &tracing::Span| {
+                        tracing::info!(
+                            status = %response.status(),
+                            duration_ms = %latency.as_millis(),
+                            "request completed"
+                        );
+                    },
+                ),
         )
         .layer(middleware_stack)
         .with_state(state)
