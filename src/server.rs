@@ -14,25 +14,25 @@ use tracing::{debug, error, info};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
-pub struct FastRoute {
+pub struct CachedRoute {
     pub content: Arc<CompressedContent>,
     pub path: Arc<PathBuf>,
     pub modified: SystemTime,
-    pub headers: Arc<FastRouteHeaders>,
+    pub headers: Arc<CachedRouteHeaders>,
 }
 
 #[derive(Debug, Clone)]
-pub struct FastRouteHeaders {
+pub struct CachedRouteHeaders {
     pub content_type: Arc<str>,
     pub last_modified: Arc<str>,
     pub etag: Arc<str>,
     pub cache_control: Arc<str>,
 }
 
-pub type FastRoutes = DashMap<Arc<str>, FastRoute, FxBuildHasher>;
+pub type CachedRoutes = DashMap<Arc<str>, CachedRoute, FxBuildHasher>;
 
 pub struct NanoWeb {
-    pub routes: FastRoutes,
+    pub routes: CachedRoutes,
     pub static_cache: DashMap<Arc<str>, Arc<Mmap>, FxBuildHasher>,
 }
 
@@ -109,7 +109,7 @@ impl NanoWeb {
         metadata: &std::fs::Metadata,
         public_dir: &Path,
         config_prefix: &str,
-    ) -> Result<(Arc<str>, FastRoute)> {
+    ) -> Result<(Arc<str>, CachedRoute)> {
         // Memory-map large files for zero-copy serving
         let content = if metadata.len() > 8192 {
             // Use memory mapping for larger files
@@ -144,14 +144,14 @@ impl NanoWeb {
         let etag = self.generate_fast_etag(&modified, &compressed.plain);
         let last_modified = self.format_fast_http_date(modified);
 
-        let headers = Arc::new(FastRouteHeaders {
+        let headers = Arc::new(CachedRouteHeaders {
             content_type: Arc::from(mime_config.mime_type.as_str()),
             last_modified: Arc::from(last_modified.as_str()),
             etag: Arc::from(etag.as_str()),
             cache_control: Arc::from(get_cache_control(&mime_config.mime_type)),
         });
 
-        let route = FastRoute {
+        let route = CachedRoute {
             content: Arc::new(compressed),
             path: Arc::new(file_path.to_path_buf()),
             modified,
@@ -163,7 +163,7 @@ impl NanoWeb {
     }
 
     #[inline(always)]
-    pub fn get_route(&self, path: &str) -> Option<FastRoute> {
+    pub fn get_route(&self, path: &str) -> Option<CachedRoute> {
         self.routes.get(path).map(|entry| entry.value().clone())
     }
 
@@ -197,7 +197,7 @@ impl NanoWeb {
         &self,
         path: &str,
         config_prefix: &str,
-    ) -> Result<Option<FastRoute>> {
+    ) -> Result<Option<CachedRoute>> {
         if let Some(route_ref) = self.routes.get(path) {
             let route = route_ref.value().clone();
             drop(route_ref); // Release the reference early
