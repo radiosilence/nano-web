@@ -123,13 +123,26 @@ jobs:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
 
-  build-amd64-release:
-    name: Build AMD64 Release Image
-    runs-on: ubuntu-latest
+  build-release:
+    name: Build ${{ matrix.arch }} Release Image
+    runs-on: ${{ matrix.runner }}
     needs: test
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm64
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      major: ${{ steps.version.outputs.major }}
+      major_minor: ${{ steps.version.outputs.major_minor }}
       
     steps:
       - name: Checkout
@@ -138,80 +151,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          VERSION=${VERSION#v}
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          
-      - name: Build and push AMD64
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-amd64
-          cache-from: type=gha,scope=release-amd64
-          cache-to: type=gha,mode=max,scope=release-amd64
-
-  build-arm64-release:
-    name: Build ARM64 Release Image
-    runs-on: ubuntu-24.04-arm64
-    needs: test
-    permissions:
-      contents: read
-      packages: write
-      
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          VERSION=${VERSION#v}
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          
-      - name: Build and push ARM64
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-arm64
-          cache-from: type=gha,scope=release-arm64
-          cache-to: type=gha,mode=max,scope=release-arm64
-
-  create-release-manifest:
-    name: Create Release Multi-Arch Manifest
-    runs-on: ubuntu-latest
-    needs: [build-amd64-release, build-arm64-release]
-    permissions:
-      contents: read
-      packages: write
-      
-    steps:
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
@@ -226,32 +165,63 @@ jobs:
           VERSION=${VERSION#v}
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)  
+          MINOR=$(echo $VERSION | cut -d. -f2)
           echo "major=${MAJOR}" >> $GITHUB_OUTPUT
           echo "major_minor=${MAJOR}.${MINOR}" >> $GITHUB_OUTPUT
           
+      - name: Build and push ${{ matrix.arch }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
+
+  create-release-manifest:
+    name: Create Release Multi-Arch Manifest
+    runs-on: ubuntu-latest
+    needs: build-release
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
       - name: Create and push release manifests
         run: |
+          VERSION="${{ needs.build-release.outputs.version }}"
+          MAJOR="${{ needs.build-release.outputs.major }}"
+          MAJOR_MINOR="${{ needs.build-release.outputs.major_minor }}"
+          
           # Create multi-arch manifests for different version tags
           docker buildx imagetools create \
-            --tag ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }} \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-amd64 \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-arm64
+            --tag ghcr.io/${{ github.repository }}:${VERSION} \
+            ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
+            ghcr.io/${{ github.repository }}:${VERSION}-arm64
             
           docker buildx imagetools create \
-            --tag ghcr.io/${{ github.repository }}:${{ steps.version.outputs.major_minor }} \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-amd64 \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-arm64
+            --tag ghcr.io/${{ github.repository }}:${MAJOR_MINOR} \
+            ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
+            ghcr.io/${{ github.repository }}:${VERSION}-arm64
             
           docker buildx imagetools create \
-            --tag ghcr.io/${{ github.repository }}:${{ steps.version.outputs.major }} \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-amd64 \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-arm64
+            --tag ghcr.io/${{ github.repository }}:${MAJOR} \
+            ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
+            ghcr.io/${{ github.repository }}:${VERSION}-arm64
             
           docker buildx imagetools create \
             --tag ghcr.io/${{ github.repository }}:latest \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-amd64 \
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}-arm64
+            ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
+            ghcr.io/${{ github.repository }}:${VERSION}-arm64
 
   attach-binaries:
     name: Attach binaries to release
