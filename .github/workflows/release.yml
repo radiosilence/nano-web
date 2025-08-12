@@ -123,7 +123,7 @@ jobs:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
 
-  build-release-image:
+  build-image:
     name: Build ${{ matrix.arch }} Release Image
     runs-on: ${{ matrix.runner }}
     needs: test
@@ -183,7 +183,7 @@ jobs:
   create-release-manifest:
     name: Create Release Multi-Arch Manifest
     runs-on: ubuntu-latest
-    needs: build-release-image
+    needs: build-image
     permissions:
       contents: read
       packages: write
@@ -198,9 +198,9 @@ jobs:
 
       - name: Create and push release manifests
         run: |
-          VERSION="${{ needs.build-release.outputs.version }}"
-          MAJOR="${{ needs.build-release.outputs.major }}"
-          MAJOR_MINOR="${{ needs.build-release.outputs.major_minor }}"
+          VERSION="${{ needs.build-image.outputs.version }}"
+          MAJOR="${{ needs.build-image.outputs.major }}"
+          MAJOR_MINOR="${{ needs.build-image.outputs.major_minor }}"
 
           # Create multi-arch manifests for different version tags
           docker buildx imagetools create \
@@ -223,19 +223,33 @@ jobs:
             ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
             ghcr.io/${{ github.repository }}:${VERSION}-arm64
 
-  attach-binaries:
-    name: Attach binaries to release
+  create-release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: build-binaries
-    if: github.event_name == 'release'
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Attach binaries to release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           files: |
             nano-web-linux-amd64/nano-web-linux-amd64
             nano-web-linux-arm64/nano-web-linux-arm64
@@ -246,8 +260,8 @@ jobs:
   update-formula:
     name: Update Homebrew formula
     runs-on: ubuntu-latest
-    needs: [build-binaries, attach-binaries, create-release-manifest]
-    if: github.event_name == 'release'
+    needs: [build-binaries, create-release, create-release-manifest]
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout
