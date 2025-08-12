@@ -31,18 +31,18 @@ pub struct FastRouteHeaders {
 
 pub type FastRoutes = DashMap<Arc<str>, FastRoute, FxBuildHasher>;
 
-pub struct NanoServer {
+pub struct NanoWeb {
     pub routes: FastRoutes,
     pub static_cache: DashMap<Arc<str>, Arc<Mmap>, FxBuildHasher>,
 }
 
-impl Default for NanoServer {
+impl Default for NanoWeb {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NanoServer {
+impl NanoWeb {
     pub fn new() -> Self {
         Self {
             routes: DashMap::with_hasher(FxBuildHasher::default()),
@@ -175,7 +175,7 @@ impl NanoServer {
 
     fn generate_fast_etag(&self, modified: &SystemTime, content: &[u8]) -> String {
         use std::time::UNIX_EPOCH;
-        
+
         let timestamp = modified
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -192,7 +192,7 @@ impl NanoServer {
 }
 
 // Lock-free atomic operations for route updates in dev mode
-impl NanoServer {
+impl NanoWeb {
     pub fn refresh_if_modified(
         &self,
         path: &str,
