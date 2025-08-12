@@ -153,7 +153,7 @@ struct FinalServeConfig {
 impl FinalServeConfig {
     async fn serve(self) -> Result<()> {
         // Use Axum with our ultra-fast compression and caching system
-        let config = crate::axum_server::AxumServeConfig {
+        let config = crate::server::AxumServeConfig {
             public_dir: self.public_dir,
             port: self.port,
             dev: self.dev,
@@ -161,7 +161,7 @@ impl FinalServeConfig {
             config_prefix: self.config_prefix,
             log_requests: self.log_requests,
         };
-        crate::axum_server::start_axum_server(config).await
+        crate::server::start_axum_server(config).await
     }
 }
 

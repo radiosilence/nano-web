@@ -54,7 +54,7 @@ impl CompressedContent {
 }
 
 pub fn gzip_compress(data: &[u8]) -> Result<Bytes> {
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
     encoder.write_all(data)?;
     let compressed = encoder.finish()?;
     Ok(Bytes::from(compressed))
@@ -63,11 +63,15 @@ pub fn gzip_compress(data: &[u8]) -> Result<Bytes> {
 pub fn brotli_compress(data: &[u8]) -> Result<Bytes> {
     let mut compressed = Vec::new();
     let mut cursor = std::io::Cursor::new(data);
-    brotli::BrotliCompress(&mut cursor, &mut compressed, &Default::default())?;
+    let params = brotli::enc::BrotliEncoderParams {
+        quality: 11, // Maximum quality (0-11)
+        ..Default::default()
+    };
+    brotli::BrotliCompress(&mut cursor, &mut compressed, &params)?;
     Ok(Bytes::from(compressed))
 }
 
 pub fn zstd_compress(data: &[u8]) -> Result<Bytes> {
-    let compressed = zstd::bulk::compress(data, 3)?;
+    let compressed = zstd::bulk::compress(data, 22)?; // Maximum level (1-22)
     Ok(Bytes::from(compressed))
 }

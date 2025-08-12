@@ -1,226 +1,211 @@
-use crate::compression::CompressedContent;
-use crate::mime_types::{get_cache_control, get_mime_config};
-use crate::template::render_template;
 use anyhow::Result;
-use dashmap::DashMap;
-use fxhash::FxBuildHasher;
-use memmap2::Mmap;
-use rayon::prelude::*;
-use std::fs::File;
-use std::path::{Path, PathBuf};
+use axum::{
+    extract::State,
+    http::{header, HeaderMap, StatusCode, Uri},
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
+use chrono::Utc;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
-use tracing::{debug, error, info};
-use walkdir::WalkDir;
+use tokio::net::TcpListener;
+use tower::ServiceBuilder;
+use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
+use tracing::{debug, info};
 
-#[derive(Debug, Clone)]
-pub struct CachedRoute {
-    pub content: Arc<CompressedContent>,
-    pub path: Arc<PathBuf>,
-    pub modified: SystemTime,
-    pub headers: Arc<CachedRouteHeaders>,
+use crate::routes::NanoWeb;
+
+#[derive(Clone)]
+pub struct AxumServeConfig {
+    pub public_dir: PathBuf,
+    pub port: u16,
+    pub dev: bool,
+    pub spa_mode: bool,
+    pub config_prefix: String,
+    pub log_requests: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct CachedRouteHeaders {
-    pub content_type: Arc<str>,
-    pub last_modified: Arc<str>,
-    pub etag: Arc<str>,
-    pub cache_control: Arc<str>,
+#[derive(Clone)]
+struct AppState {
+    server: Arc<NanoWeb>,
+    config: AxumServeConfig,
 }
 
-pub type CachedRoutes = DashMap<Arc<str>, CachedRoute, FxBuildHasher>;
+pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
+    let server = Arc::new(NanoWeb::new());
 
-pub struct NanoWeb {
-    pub routes: CachedRoutes,
-    pub static_cache: DashMap<Arc<str>, Arc<Mmap>, FxBuildHasher>,
+    // Populate routes using our existing route system
+    server.populate_routes(&config.public_dir, &config.config_prefix)?;
+
+    let state = AppState {
+        server,
+        config: config.clone(),
+    };
+
+    info!("Routes loaded: {}", state.server.routes.len());
+
+    let app = create_router(state);
+
+    let addr = format!("0.0.0.0:{}", config.port);
+    let listener = TcpListener::bind(&addr).await?;
+
+    info!("Starting server on {}", addr);
+    info!("Serving directory: {:?}", config.public_dir);
+
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }
 
-impl Default for NanoWeb {
-    fn default() -> Self {
-        Self::new()
+fn create_router(state: AppState) -> Router {
+    let middleware_stack = ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            "nosniff".parse::<axum::http::HeaderValue>().unwrap(),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_FRAME_OPTIONS,
+            "SAMEORIGIN".parse::<axum::http::HeaderValue>().unwrap(),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            "strict-origin-when-cross-origin"
+                .parse::<axum::http::HeaderValue>()
+                .unwrap(),
+        ));
+
+    let app = Router::new()
+        .route("/_health", get(health_handler))
+        .route("/", get(root_handler))
+        .fallback(get(file_handler));
+
+    if state.config.log_requests {
+        app.layer(TraceLayer::new_for_http())
+            .layer(middleware_stack)
+            .with_state(state)
+    } else {
+        app.layer(middleware_stack).with_state(state)
     }
 }
 
-impl NanoWeb {
-    pub fn new() -> Self {
-        Self {
-            routes: DashMap::with_hasher(FxBuildHasher::default()),
-            static_cache: DashMap::with_hasher(FxBuildHasher::default()),
+async fn health_handler() -> impl IntoResponse {
+    let timestamp = Utc::now().to_rfc3339();
+    let response = format!(r#"{{"status":"ok","timestamp":"{}"}}"#, timestamp);
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        response,
+    )
+}
+
+async fn root_handler(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
+    serve_file("/".to_string(), headers, state).await
+}
+
+async fn file_handler(
+    uri: Uri,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let path = uri.path().to_string();
+    serve_file(path, headers, state).await
+}
+
+async fn serve_file(
+    path: String,
+    request_headers: HeaderMap,
+    state: AppState,
+) -> impl IntoResponse {
+    debug!("Serving path: {}", path);
+
+    // Security: validate path
+    if let Err(e) = crate::path::validate_request_path(&path) {
+        tracing::warn!("Path validation failed for '{}': {}", path, e);
+        return (StatusCode::BAD_REQUEST, "Bad Request").into_response();
+    }
+
+    // Route lookup using our existing system
+    let mut route = state.server.get_route(&path);
+
+    if route.is_none() && !path.ends_with('/') {
+        // Try with trailing slash
+        let path_with_slash = format!("{}/", path);
+        route = state.server.get_route(&path_with_slash);
+    }
+
+    if route.is_none() && state.config.spa_mode {
+        // SPA fallback
+        route = state.server.get_route("/");
+        if route.is_some() {
+            debug!("SPA fallback for: {}", path);
         }
     }
 
-    pub fn populate_routes(&self, public_dir: &Path, config_prefix: &str) -> Result<()> {
-        debug!("Starting route population from {:?}", public_dir);
+    let route = match route {
+        Some(r) => r,
+        None => {
+            debug!("Route not found: {}", path);
+            return (StatusCode::NOT_FOUND, "Not Found").into_response();
+        }
+    };
 
-        // Collect all file paths first
-        let file_paths: Vec<_> = WalkDir::new(public_dir)
-            .into_iter()
-            .filter_map(|entry| {
-                entry.ok().and_then(|e| {
-                    if e.file_type().is_file() {
-                        Some((e.path().to_path_buf(), e.metadata().ok()?))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-
-        info!("Processing {} files in parallel", file_paths.len());
-
-        // Process files in parallel
-        let routes: Vec<_> = file_paths
-            .par_iter()
-            .filter_map(|(file_path, metadata)| {
-                match self.create_route(file_path, metadata, public_dir, config_prefix) {
-                    Ok((url_path, route)) => Some((url_path, route)),
-                    Err(e) => {
-                        error!("Failed to create route for {:?}: {}", file_path, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Insert routes into concurrent map
-        for (url_path, route) in routes {
-            self.routes.insert(url_path.clone(), route.clone());
-
-            // Handle index files
-            if url_path.ends_with("/index.html") {
-                let dir_path = if url_path.as_ref() == "/index.html" {
-                    Arc::from("/")
-                } else {
-                    let dir = url_path.trim_end_matches("/index.html");
-                    Arc::from(format!("{}/", dir))
-                };
-                self.routes.insert(dir_path, route);
+    // Dev mode file refresh
+    let route = if state.config.dev {
+        match state
+            .server
+            .refresh_if_modified(&path, &state.config.config_prefix)
+        {
+            Ok(Some(updated_route)) => {
+                debug!("Route refreshed: {}", path);
+                updated_route
+            }
+            Ok(None) => route,
+            Err(e) => {
+                debug!("Failed to refresh route {}: {}", path, e);
+                route
             }
         }
+    } else {
+        route
+    };
 
-        info!("Routes populated: {} routes", self.routes.len());
-        Ok(())
+    // Extract Accept-Encoding from request headers for our compression system
+    let accept_encoding = request_headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+
+    // Use our compression system with pre-computed compressed files
+    let (encoding, content) = route.content.get_best_encoding(accept_encoding);
+
+    // Build response with optimized headers
+    let mut response_headers = HeaderMap::new();
+
+    response_headers.insert(
+        header::CONTENT_TYPE,
+        route.headers.content_type.parse().unwrap(),
+    );
+    response_headers.insert(
+        header::LAST_MODIFIED,
+        route.headers.last_modified.parse().unwrap(),
+    );
+    response_headers.insert(header::ETAG, route.headers.etag.parse().unwrap());
+    response_headers.insert(
+        header::CACHE_CONTROL,
+        route.headers.cache_control.parse().unwrap(),
+    );
+
+    // Add our compression encoding header if compressed
+    if encoding != "identity" {
+        response_headers.insert(header::CONTENT_ENCODING, encoding.parse().unwrap());
     }
 
-    fn create_route(
-        &self,
-        file_path: &Path,
-        metadata: &std::fs::Metadata,
-        public_dir: &Path,
-        config_prefix: &str,
-    ) -> Result<(Arc<str>, CachedRoute)> {
-        // Memory-map large files for zero-copy serving
-        let content = if metadata.len() > 8192 {
-            // Use memory mapping for larger files
-            let file = File::open(file_path)?;
-            let mmap = unsafe { Mmap::map(&file)? };
-            let url_path = self.file_path_to_url(file_path, public_dir)?;
-            self.static_cache.insert(url_path.clone(), Arc::new(mmap));
+    debug!(
+        "Serving {} bytes with encoding: {} (from pre-compressed cache)",
+        content.len(),
+        encoding
+    );
 
-            // For mmap files, we still need a copy for compression
-            std::fs::read(file_path)?
-        } else {
-            std::fs::read(file_path)?
-        };
-
-        let modified = metadata.modified()?;
-        let mime_config = get_mime_config(file_path);
-
-        // Apply templating if needed
-        let processed_content = if mime_config.is_templatable {
-            match render_template(&String::from_utf8_lossy(&content), config_prefix) {
-                Ok(templated) => templated.into_bytes(),
-                Err(e) => {
-                    error!("Template rendering failed for {:?}: {}", file_path, e);
-                    content
-                }
-            }
-        } else {
-            content
-        };
-
-        let compressed = CompressedContent::new(processed_content, mime_config.is_compressible)?;
-        let etag = self.generate_fast_etag(&modified, &compressed.plain);
-        let last_modified = self.format_fast_http_date(modified);
-
-        let headers = Arc::new(CachedRouteHeaders {
-            content_type: Arc::from(mime_config.mime_type.as_str()),
-            last_modified: Arc::from(last_modified.as_str()),
-            etag: Arc::from(etag.as_str()),
-            cache_control: Arc::from(get_cache_control(&mime_config.mime_type)),
-        });
-
-        let route = CachedRoute {
-            content: Arc::new(compressed),
-            path: Arc::new(file_path.to_path_buf()),
-            modified,
-            headers,
-        };
-
-        let url_path = self.file_path_to_url(file_path, public_dir)?;
-        Ok((url_path, route))
-    }
-
-    #[inline(always)]
-    pub fn get_route(&self, path: &str) -> Option<CachedRoute> {
-        self.routes.get(path).map(|entry| entry.value().clone())
-    }
-
-    fn file_path_to_url(&self, file_path: &Path, public_dir: &Path) -> Result<Arc<str>> {
-        let relative = file_path.strip_prefix(public_dir)?;
-        let url_path = format!("/{}", relative.to_string_lossy().replace('\\', "/"));
-        Ok(Arc::from(url_path.as_str()))
-    }
-
-    fn generate_fast_etag(&self, modified: &SystemTime, content: &[u8]) -> String {
-        use std::time::UNIX_EPOCH;
-
-        let timestamp = modified
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        // Simple ETag: timestamp-size
-        format!("\"{:x}-{:x}\"", timestamp, content.len())
-    }
-
-    fn format_fast_http_date(&self, time: SystemTime) -> String {
-        let datetime = chrono::DateTime::<chrono::Utc>::from(time);
-        datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
-    }
-}
-
-// Lock-free atomic operations for route updates in dev mode
-impl NanoWeb {
-    pub fn refresh_if_modified(
-        &self,
-        path: &str,
-        config_prefix: &str,
-    ) -> Result<Option<CachedRoute>> {
-        if let Some(route_ref) = self.routes.get(path) {
-            let route = route_ref.value().clone();
-            drop(route_ref); // Release the reference early
-
-            let metadata = std::fs::metadata(&*route.path)?;
-            let modified = metadata.modified()?;
-
-            if modified > route.modified {
-                debug!("File modified, refreshing route: {:?}", route.path);
-
-                // Create new route
-                let parent_dir = route.path.parent().unwrap();
-                let public_dir = parent_dir.ancestors().last().unwrap();
-                let (_, new_route) =
-                    self.create_route(&route.path, &metadata, public_dir, config_prefix)?;
-
-                // Atomic update
-                self.routes.insert(Arc::from(path), new_route.clone());
-                return Ok(Some(new_route));
-            }
-            Ok(Some(route))
-        } else {
-            Ok(None)
-        }
-    }
+    (StatusCode::OK, response_headers, content.clone()).into_response()
 }
