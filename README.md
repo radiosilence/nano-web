@@ -1,7 +1,7 @@
 # nano-web
 
 ![CI](https://github.com/radiosilence/nano-web/actions/workflows/ci.yml/badge.svg)
-![Docker](https://github.com/radiosilence/nano-web/actions/workflows/docker-branch.yml/badge.svg)
+![Docker](https://github.com/radiosilence/nano-web/actions/workflows/docker-main.yml/badge.svg)
 ![Release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/nano-web.svg)](https://crates.io/crates/nano-web)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
