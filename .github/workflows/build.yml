@@ -34,7 +34,6 @@ jobs:
   build-binaries:
     name: Build binaries
     runs-on: ${{ matrix.os }}
-    needs: test
     strategy:
       matrix:
         include:
