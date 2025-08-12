@@ -27,7 +27,7 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm64
+            runner: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
@@ -94,7 +94,7 @@ jobs:
         run: |
           SAFE_NAME="${{ needs.build.outputs.safe_name }}"
           TIMESTAMP="${{ needs.build.outputs.timestamp }}"
-          
+
           # Create unified multi-arch manifest (primary tag without arch suffix)
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME} \
@@ -118,7 +118,7 @@ jobs:
         run: |
           SAFE_NAME="${{ needs.build.outputs.safe_name }}"
           TIMESTAMP="${{ needs.build.outputs.timestamp }}"
-          
+
           echo "🐳 **Built Docker Images:**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Branch: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
