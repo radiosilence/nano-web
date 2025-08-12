@@ -3,8 +3,9 @@ name: Docker Branch Build
 # Builds Docker images for every branch push with branch name in tag
 on:
   push:
-    branches:
-      - main
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
