@@ -83,7 +83,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -293,6 +292,7 @@ jobs:
 
       - name: Commit formula update
         run: |
+          git checkout main
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add Formula/nano-web.rb
