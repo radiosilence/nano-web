@@ -34,7 +34,6 @@ jobs:
     if: github.event_name != 'pull_request'
     outputs:
       safe_name: ${{ steps.branch.outputs.safe_name }}
-      timestamp: ${{ steps.branch.outputs.timestamp }}
 
     steps:
       - name: Checkout
@@ -60,7 +59,6 @@ jobs:
             SAFE_BRANCH="latest"
           fi
           echo "safe_name=${SAFE_BRANCH}" >> $GITHUB_OUTPUT
-          echo "timestamp=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
 
       - name: Build and push ${{ matrix.arch }}
         uses: docker/build-push-action@v5
@@ -100,9 +98,10 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-arm64
 
-          # Create commit SHA manifest for reproducible builds
+          # Create commit SHA manifest for reproducible builds (truncated)
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
           docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-arm64
 
@@ -110,7 +109,7 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           SAFE_NAME="${{ needs.build.outputs.safe_name }}"
-          TIMESTAMP="${{ needs.build.outputs.timestamp }}"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
 
           echo "🐳 **Built Docker Images:**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -121,11 +120,8 @@ jobs:
           echo "# Latest build for this branch (unified multi-arch):" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# Specific build with timestamp:" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-${TIMESTAMP}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Specific build with commit SHA:" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Usage:" >> $GITHUB_STEP_SUMMARY
