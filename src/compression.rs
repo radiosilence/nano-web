@@ -25,7 +25,6 @@ impl CompressedContent {
             });
         }
 
-        // Parallel compression for maximum speed
         let plain_ref = &plain;
         let (gzip, (brotli, zstd)) = rayon::join(
             || gzip_compress(plain_ref),
