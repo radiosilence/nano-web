@@ -7,11 +7,6 @@ ARG TARGETARCH
 # Install build dependencies
 RUN apk add --no-cache musl-dev gcc ca-certificates
 
-# Install cross-compilation tools for ARM64
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-    apk add --no-cache aarch64-linux-musl-cross; \
-fi
-
 # Set working directory
 WORKDIR /build
 
@@ -32,11 +27,6 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 # Build the binary with optimizations
 ENV RUSTFLAGS="-C target-feature=+crt-static"
 RUN export RUST_TARGET=$(cat /tmp/rust_target | cut -d= -f2) && \
-    if [ "$TARGETARCH" = "arm64" ]; then \
-        export CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc; \
-        export AR_aarch64_unknown_linux_musl=aarch64-linux-musl-ar; \
-        export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc; \
-    fi && \
     cargo build --release --target $RUST_TARGET && \
     cp target/$RUST_TARGET/release/nano-web /tmp/nano-web
 
