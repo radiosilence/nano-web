@@ -1,4 +1,3 @@
-[workspace]
 # Don't publish to crates.io automatically - CI will handle it
 publish = false
 # Let cargo-release handle git tag and push to trigger CI
