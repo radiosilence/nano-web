@@ -14,7 +14,7 @@ use tower::ServiceBuilder;
 use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tracing::{debug, info};
 
-use crate::server::NanoServer;
+use crate::server::NanoWeb;
 
 #[derive(Clone)]
 pub struct AxumServeConfig {
@@ -28,12 +28,12 @@ pub struct AxumServeConfig {
 
 #[derive(Clone)]
 struct AppState {
-    server: Arc<NanoServer>,
+    server: Arc<NanoWeb>,
     config: AxumServeConfig,
 }
 
 pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
-    let server = Arc::new(NanoServer::new());
+    let server = Arc::new(NanoWeb::new());
 
     // Populate routes using our existing route system
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
@@ -70,7 +70,9 @@ fn create_router(state: AppState) -> Router {
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::REFERRER_POLICY,
-            "strict-origin-when-cross-origin".parse::<axum::http::HeaderValue>().unwrap(),
+            "strict-origin-when-cross-origin"
+                .parse::<axum::http::HeaderValue>()
+                .unwrap(),
         ));
 
     let app = Router::new()
