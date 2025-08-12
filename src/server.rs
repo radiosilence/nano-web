@@ -175,64 +175,18 @@ impl NanoServer {
 
     fn generate_fast_etag(&self, modified: &SystemTime, content: &[u8]) -> String {
         use std::time::UNIX_EPOCH;
-
-        // Use a faster hash for ETags in production
+        
         let timestamp = modified
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_nanos();
+            .as_secs();
 
-        // Use ahash for faster hashing
-        use std::hash::{Hash, Hasher};
-        let mut hasher = ahash::AHasher::default();
-        timestamp.hash(&mut hasher);
-        content.len().hash(&mut hasher); // Just use length for speed
-        let hash = hasher.finish();
-
-        format!("\"{:x}\"", hash)
+        // Simple ETag: timestamp-size
+        format!("\"{:x}-{:x}\"", timestamp, content.len())
     }
 
     fn format_fast_http_date(&self, time: SystemTime) -> String {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        use std::sync::OnceLock;
-        use std::time::UNIX_EPOCH;
-
-        let duration = time.duration_since(UNIX_EPOCH).unwrap();
-        let timestamp = duration.as_secs();
-        let current_minute = timestamp / 60;
-
-        // Thread-safe cached timestamp formatting
-        static LAST_UPDATE: AtomicU64 = AtomicU64::new(0);
-        static CACHED_TIME: OnceLock<std::sync::Mutex<(u64, String)>> = OnceLock::new();
-
-        let cache = CACHED_TIME.get_or_init(|| std::sync::Mutex::new((0, String::new())));
-        let last_update = LAST_UPDATE.load(Ordering::Acquire);
-
-        if current_minute != last_update {
-            if let Ok(mut cached) = cache.lock() {
-                // Double-check under lock
-                if current_minute != LAST_UPDATE.load(Ordering::Acquire) {
-                    let datetime =
-                        chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0)
-                            .unwrap_or_default();
-                    cached.0 = current_minute;
-                    cached.1 = datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-                    LAST_UPDATE.store(current_minute, Ordering::Release);
-                }
-                return cached.1.clone();
-            }
-        }
-
-        // Fallback if lock fails - just format directly
-        if let Ok(cached) = cache.lock() {
-            if cached.0 == current_minute {
-                return cached.1.clone();
-            }
-        }
-
-        // Final fallback
-        let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0)
-            .unwrap_or_default();
+        let datetime = chrono::DateTime::<chrono::Utc>::from(time);
         datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
     }
 }
