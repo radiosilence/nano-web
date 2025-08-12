@@ -1,8 +1,8 @@
-mod axum_server;
 mod cli;
 mod compression;
 mod mime_types;
-mod security;
+mod path;
+mod routes;
 mod server;
 mod template;
 
