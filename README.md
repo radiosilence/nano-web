@@ -110,7 +110,7 @@ nano-web serve --help
 | `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Environment variable injection prefix       |
 | `LOG_LEVEL`     | `--log-level`     | `info`    | Logging: `debug`, `info`, `warn`, `error`   |
 | `LOG_FORMAT`    | `--log-format`    | `console` | Format: `json` or `console`                 |
-| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable request logging                      |
+| `LOG_REQUESTS`  | `--log-requests`  | `false`   | Enable request logging                      |
 
 ### Environment Variables
 

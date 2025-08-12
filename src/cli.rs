@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
+use crate::init_logging;
 
 const DEFAULT_PORT: u16 = 3000;
 const VERSION: &str = include_str!("../VERSION");
@@ -44,7 +45,7 @@ pub struct Cli {
     #[arg(help = "Log format (json, console)")]
     pub log_format: String,
 
-    #[arg(long = "log-requests", default_value_t = true)]
+    #[arg(long = "log-requests")]
     #[arg(help = "Log HTTP requests")]
     pub log_requests: bool,
 }
@@ -82,7 +83,7 @@ pub enum Commands {
 
         #[arg(long = "log-requests")]
         #[arg(help = "Log HTTP requests")]
-        log_requests: Option<bool>,
+        log_requests: bool,
     },
     #[command(about = "Show version information")]
     Version,
@@ -95,6 +96,11 @@ pub enum Commands {
 
 impl Cli {
     pub async fn run(self) -> Result<()> {
+        // Initialize logging with defaults for non-serve commands
+        if self.command.is_none() || !matches!(self.command, Some(Commands::Serve { .. })) {
+            init_logging(&self.log_level, &self.log_format);
+        }
+        
         match self.command {
             Some(Commands::Serve {
                 ref directory,
@@ -102,21 +108,27 @@ impl Cli {
                 dev,
                 spa,
                 config_prefix,
-                log_level: _,
-                log_format: _,
+                log_level,
+                log_format,
                 log_requests,
             }) => {
                 let public_dir = self.dir.clone();
                 let serve_dir = directory.clone().unwrap_or(public_dir);
 
                 // Use subcommand values or fall back to global defaults
+                let final_log_level = log_level.unwrap_or(self.log_level);
+                let final_log_format = log_format.unwrap_or(self.log_format);
+                
+                // Initialize logging with final values
+                init_logging(&final_log_level, &final_log_format);
+                
                 let final_config = FinalServeConfig {
                     public_dir: serve_dir,
                     port: port.unwrap_or(self.port),
                     dev: dev || self.dev,
                     spa_mode: spa || self.spa,
                     config_prefix: config_prefix.unwrap_or(self.config_prefix),
-                    log_requests: log_requests.unwrap_or(self.log_requests),
+                    log_requests: log_requests || self.log_requests,
                 };
 
                 final_config.serve().await
