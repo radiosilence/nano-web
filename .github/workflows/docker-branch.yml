@@ -93,17 +93,10 @@ jobs:
       - name: Create and push manifest
         run: |
           SAFE_NAME="${{ needs.build.outputs.safe_name }}"
-          TIMESTAMP="${{ needs.build.outputs.timestamp }}"
 
           # Create unified multi-arch manifest (primary tag without arch suffix)
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-arm64
-
-          # Create timestamped manifest for specific builds
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-${TIMESTAMP} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-arm64
 
