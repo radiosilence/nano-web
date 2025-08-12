@@ -26,9 +26,6 @@ RUN TARGET=$(uname -m)-unknown-linux-musl && \
 # Runtime stage
 FROM scratch
 
-# Copy CA certificates for HTTPS
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
 # Copy the binary
 COPY --from=builder /tmp/nano-web /nano-web
 
