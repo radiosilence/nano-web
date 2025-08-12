@@ -44,6 +44,12 @@ Transfer/sec:    757.44MB
 
 ## 📦 Installation
 
+### Install with Mise (via ubi)
+
+```bash
+mise install ubi:radiosilence/nano-web
+```
+
 ### Install with Cargo
 
 ```bash
