@@ -19,7 +19,7 @@ clap_complete = "4.5"
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.47", features = ["net", "io-util", "rt-multi-thread", "macros", "time", "fs"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 axum = { version = "0.8", features = ["tokio", "tracing"] }
 hyper = { version = "1.6", features = ["server", "http1"] }
 tower = { version = "0.5", features = ["timeout"] }
