@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.84-alpine AS builder
+FROM rust:1-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache musl-dev gcc ca-certificates
@@ -12,8 +12,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY src src
 COPY VERSION ./
 
-# Build with static linking for scratch image
-ENV RUSTFLAGS="-C target-feature=+crt-static"
+# Build with static linking and additional optimizations for scratch image
+ENV RUSTFLAGS="-C target-feature=+crt-static -C target-cpu=generic"
 RUN cargo build --release && \
     cp target/release/nano-web /tmp/nano-web
 
