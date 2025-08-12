@@ -183,7 +183,7 @@ jobs:
   create-release-manifest:
     name: Create Release Multi-Arch Manifest
     runs-on: ubuntu-latest
-    needs: build-release
+    needs: build-release-image
     permissions:
       contents: read
       packages: write
