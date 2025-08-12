@@ -1,23 +1,24 @@
 # nano-web
 
-![publish-image](https://github.com/radiosilence/nano-web/actions/workflows/publish-image.yml/badge.svg)
-![push-package-amd64](https://github.com/radiosilence/nano-web/actions/workflows/push-package-amd64.yml/badge.svg)
-![release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
-![test](https://github.com/radiosilence/nano-web/actions/workflows/test.yml/badge.svg)
+![CI](https://github.com/radiosilence/nano-web/actions/workflows/ci.yml/badge.svg)
+![Docker](https://github.com/radiosilence/nano-web/actions/workflows/docker-branch.yml/badge.svg)
+![Release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/nano-web.svg)](https://crates.io/crates/nano-web)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT) 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 Static file server built with Rust. Serves files from memory with pre-compressed variants.
 
 ## Performance
 
 130,000+ requests/sec with sub-millisecond latency:
+
 - Axum/Hyper HTTP stack
 - Files pre-compressed at startup (brotli/gzip/zstd)
 - Lock-free concurrent HashMap routing
 - Zero-copy serving with Bytes
 
 Benchmark (M3 Max):
+
 ```bash
 wrk -c 100 -d 10 -t 100 http://localhost:3000
 Running 10s test @ http://localhost:3000
@@ -71,7 +72,7 @@ COPY ./dist /public/
 Production example:
 
 ```dockerfile
-FROM node:18-alpine AS builder
+FROM node:lts-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --only=production
@@ -101,15 +102,15 @@ nano-web serve --help
 
 ## ⚙️ Configuration
 
-| Variable        | CLI Flag          | Default   | Description                                    |
-| --------------- | ----------------- | --------- | ---------------------------------------------- |
-| `PORT`          | `--port`, `-p`    | `3000`    | Port to listen on                              |
-| `--spa`         | `--spa`           | `false`   | Enable SPA mode (serve index.html for 404s)   |
-| `--dev`         | `--dev`, `-d`     | `false`   | Enable dev mode (hot-reload files)            |
-| `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Environment variable injection prefix          |
-| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging: `debug`, `info`, `warn`, `error`     |
-| `LOG_FORMAT`    | `--log-format`    | `console` | Format: `json` or `console`                   |
-| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable request logging                        |
+| Variable        | CLI Flag          | Default   | Description                                 |
+| --------------- | ----------------- | --------- | ------------------------------------------- |
+| `PORT`          | `--port`, `-p`    | `3000`    | Port to listen on                           |
+| `--spa`         | `--spa`           | `false`   | Enable SPA mode (serve index.html for 404s) |
+| `--dev`         | `--dev`, `-d`     | `false`   | Enable dev mode (hot-reload files)          |
+| `CONFIG_PREFIX` | `--config-prefix` | `VITE_`   | Environment variable injection prefix       |
+| `LOG_LEVEL`     | `--log-level`     | `info`    | Logging: `debug`, `info`, `warn`, `error`   |
+| `LOG_FORMAT`    | `--log-format`    | `console` | Format: `json` or `console`                 |
+| `LOG_REQUESTS`  | `--log-requests`  | `true`    | Enable request logging                      |
 
 ### Environment Variables
 
@@ -145,7 +146,8 @@ docker run -e VITE_API_URL=https://api.prod.com my-app     # prod
 ### Template Engine
 
 Uses MiniJinja template syntax for environment variable injection. Variables available:
-- `{{env.VARIABLE_NAME}}` - Direct variable access  
+
+- `{{env.VARIABLE_NAME}}` - Direct variable access
 - `{{Json}}` - Raw JSON string of all prefixed variables
 - `{{EscapedJson}}` - JSON-escaped for inline JavaScript
 
@@ -154,18 +156,20 @@ Uses MiniJinja template syntax for environment variable injection. Variables ava
 Built-in health endpoint at `/_health`:
 
 ```json
-{"status":"ok","timestamp":"2025-01-15T10:30:45Z"}
+{ "status": "ok", "timestamp": "2025-01-15T10:30:45Z" }
 ```
 
 ## 📊 Logging
 
 Console format (default):
+
 ```
 2025-01-15T10:30:45Z  INFO nano_web: Starting server on 0.0.0.0:3000
 2025-01-15T10:30:45Z  INFO nano_web: Routes loaded: 15
 ```
 
 JSON format for log aggregation:
+
 ```json
 {
   "timestamp": "2025-01-15T10:30:45Z",
