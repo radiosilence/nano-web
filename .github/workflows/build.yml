@@ -1,4 +1,4 @@
-name: Docker Branch Build
+name: Build
 
 # Builds Docker images for every branch push with branch name in tag
 on:
