@@ -163,6 +163,8 @@ Uses MiniJinja template syntax for environment variable injection. Variables ava
 - `{{Json}}` - Raw JSON string of all prefixed variables
 - `{{EscapedJson}}` - JSON-escaped for inline JavaScript
 
+Templating is run at startup and cached.
+
 ## 🏥 Health Checks
 
 Built-in health endpoint at `/_health`:
