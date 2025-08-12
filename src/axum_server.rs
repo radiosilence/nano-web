@@ -60,22 +60,17 @@ pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
 
 fn create_router(state: AppState) -> Router {
     let middleware_stack = ServiceBuilder::new()
-        .layer(
-            // Security headers
-            SetResponseHeaderLayer::overriding(
-                header::X_CONTENT_TYPE_OPTIONS,
-                "nosniff".parse::<axum::http::HeaderValue>().unwrap(),
-            ),
-        )
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            "nosniff".parse::<axum::http::HeaderValue>().unwrap(),
+        ))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_FRAME_OPTIONS,
             "SAMEORIGIN".parse::<axum::http::HeaderValue>().unwrap(),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::REFERRER_POLICY,
-            "strict-origin-when-cross-origin"
-                .parse::<axum::http::HeaderValue>()
-                .unwrap(),
+            "strict-origin-when-cross-origin".parse::<axum::http::HeaderValue>().unwrap(),
         ));
 
     let app = Router::new()
