@@ -1,7 +1,7 @@
+use crate::init_logging;
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
-use crate::init_logging;
 
 const DEFAULT_PORT: u16 = 3000;
 const VERSION: &str = include_str!("../VERSION");
@@ -100,7 +100,7 @@ impl Cli {
         if self.command.is_none() || !matches!(self.command, Some(Commands::Serve { .. })) {
             init_logging(&self.log_level, &self.log_format);
         }
-        
+
         match self.command {
             Some(Commands::Serve {
                 ref directory,
@@ -118,10 +118,10 @@ impl Cli {
                 // Use subcommand values or fall back to global defaults
                 let final_log_level = log_level.unwrap_or(self.log_level);
                 let final_log_format = log_format.unwrap_or(self.log_format);
-                
+
                 // Initialize logging with final values
                 init_logging(&final_log_level, &final_log_format);
-                
+
                 let final_config = FinalServeConfig {
                     public_dir: serve_dir,
                     port: port.unwrap_or(self.port),
