@@ -7,7 +7,7 @@ on:
       - main
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-docker-latest
   cancel-in-progress: true
 
 env:
