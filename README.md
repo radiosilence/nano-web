@@ -127,14 +127,26 @@ Inject configuration at runtime without rebuilding:
 <!-- Your index.html -->
 <script type="module">
   window.ENV = JSON.parse("{{EscapedJson}}");
-  // or direct injection:
+  // or direct injection if you don't mind the broken syntax:
   window.ENV = {{Json}};
 </script>
 ```
 
 ```typescript
-// Your app
-const { API_URL } = JSON.parse(window.ENV);
+// env.ts
+import * as z from "zod";
+const EnvSchema = z.object({
+  API_URL: z.url(),
+});
+// Parse and validate environment variables
+const result = EnvSchema.safeParse(window.ENV);
+
+if (!result.success) {
+  throw new Error(
+    `Environment validation failed:\n${z.prettifyError(result.error)}`,
+  );
+}
+export const { API_URL } = result.data;
 ```
 
 ```bash
