@@ -42,6 +42,9 @@ LABEL org.opencontainers.image.vendor="James Cleveland"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
 
+# Set as JSON logs by default
+ENV LOG_FORMAT=json
+
 # Run the server
 ENTRYPOINT ["/nano-web"]
 CMD ["serve", "/public"]
