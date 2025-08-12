@@ -5,7 +5,7 @@ on:
     types: [published]
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,13 +44,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        
+
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
-        
+
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CARGO_TOKEN }}
 
@@ -64,7 +64,7 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             name: nano-web-linux-amd64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             name: nano-web-linux-arm64
           - os: macos-latest
@@ -76,16 +76,16 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: nano-web-windows-amd64.exe
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-          
+
       - name: Install cross-compilation tools (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -98,16 +98,16 @@ jobs:
             echo "AR_aarch64_unknown_linux_musl=aarch64-linux-gnu-ar" >> $GITHUB_ENV
             echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
           fi
-          
+
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-          
+
       - name: Build binary
         run: |
           cargo build --release --target ${{ matrix.target }}
-          
+
       - name: Prepare binary
         shell: bash
         run: |
@@ -116,14 +116,14 @@ jobs:
           else
             cp target/${{ matrix.target }}/release/nano-web ${{ matrix.name }}
           fi
-          
+
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
 
-  build-release:
+  build-release-image:
     name: Build ${{ matrix.arch }} Release Image
     runs-on: ${{ matrix.runner }}
     needs: test
@@ -135,7 +135,7 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm64
+            runner: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
@@ -143,21 +143,21 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       major: ${{ steps.version.outputs.major }}
       major_minor: ${{ steps.version.outputs.major_minor }}
-      
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
+
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Extract version
         id: version
         run: |
@@ -168,7 +168,7 @@ jobs:
           MINOR=$(echo $VERSION | cut -d. -f2)
           echo "major=${MAJOR}" >> $GITHUB_OUTPUT
           echo "major_minor=${MAJOR}.${MINOR}" >> $GITHUB_OUTPUT
-          
+
       - name: Build and push ${{ matrix.arch }}
         uses: docker/build-push-action@v5
         with:
@@ -187,7 +187,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      
+
     steps:
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -195,29 +195,29 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Create and push release manifests
         run: |
           VERSION="${{ needs.build-release.outputs.version }}"
           MAJOR="${{ needs.build-release.outputs.major }}"
           MAJOR_MINOR="${{ needs.build-release.outputs.major_minor }}"
-          
+
           # Create multi-arch manifests for different version tags
           docker buildx imagetools create \
             --tag ghcr.io/${{ github.repository }}:${VERSION} \
             ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
             ghcr.io/${{ github.repository }}:${VERSION}-arm64
-            
+
           docker buildx imagetools create \
             --tag ghcr.io/${{ github.repository }}:${MAJOR_MINOR} \
             ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
             ghcr.io/${{ github.repository }}:${VERSION}-arm64
-            
+
           docker buildx imagetools create \
             --tag ghcr.io/${{ github.repository }}:${MAJOR} \
             ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
             ghcr.io/${{ github.repository }}:${VERSION}-arm64
-            
+
           docker buildx imagetools create \
             --tag ghcr.io/${{ github.repository }}:latest \
             ghcr.io/${{ github.repository }}:${VERSION}-amd64 \
@@ -228,11 +228,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-binaries
     if: github.event_name == 'release'
-    
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
-        
+
       - name: Attach binaries to release
         uses: softprops/action-gh-release@v2
         with:
@@ -248,31 +248,31 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-binaries, attach-binaries, create-release-manifest]
     if: github.event_name == 'release'
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Extract version
         id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           VERSION=${VERSION#v}
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          
+
       - name: Download macOS AMD64 binary for SHA calculation
         uses: actions/download-artifact@v4
         with:
           name: nano-web-macos-amd64
-          
+
       - name: Calculate SHA256
         id: sha
         run: |
           SHA256=$(shasum -a 256 nano-web-macos-amd64 | cut -d' ' -f1)
           echo "sha256=${SHA256}" >> $GITHUB_OUTPUT
-          
+
       - name: Update Homebrew formula
         run: |
           cat > Formula/nano-web.rb << EOF
@@ -282,22 +282,22 @@ jobs:
             url "https://github.com/radiosilence/nano-web/releases/download/v${{ steps.version.outputs.version }}/nano-web-macos-amd64"
             version "${{ steps.version.outputs.version }}"
             sha256 "${{ steps.sha.outputs.sha256 }}"
-            
+
             on_arm do
               url "https://github.com/radiosilence/nano-web/releases/download/v${{ steps.version.outputs.version }}/nano-web-macos-arm64"
             end
-            
+
             def install
               bin.install "nano-web-macos-amd64" => "nano-web" if Hardware::CPU.intel?
               bin.install "nano-web-macos-arm64" => "nano-web" if Hardware::CPU.arm?
             end
-            
+
             test do
               system "#{bin}/nano-web", "--help"
             end
           end
           EOF
-          
+
       - name: Commit formula update
         run: |
           git config --local user.email "action@github.com"
