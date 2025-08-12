@@ -178,22 +178,26 @@ Built-in health endpoint at `/_health`:
 Console format (default):
 
 ```
-2025-01-15T10:30:45Z  INFO nano_web: Starting server on 0.0.0.0:3000
-2025-01-15T10:30:45Z  INFO nano_web: Routes loaded: 15
+2025-08-12T18:15:00.990620Z  INFO nano_web::routes: Processing 18 files in parallel
+   at src/routes.rs:70
+
+ 2025-08-12T18:15:01.207449Z  INFO nano_web::routes: Routes populated: 20 routes
+   at src/routes.rs:102
+
+ 2025-08-12T18:15:01.207466Z  INFO nano_web::server: Routes loaded: 20
+   at src/server.rs:46
+
+ 2025-08-12T18:15:01.207564Z  INFO nano_web::server: Starting server on 0.0.0.0:3001
+   at src/server.rs:53
 ```
 
 JSON format for log aggregation:
 
 ```json
-{
-  "timestamp": "2025-01-15T10:30:45Z",
-  "level": "INFO",
-  "message": "request served",
-  "method": "GET",
-  "path": "/",
-  "status": 200,
-  "duration_ms": 0.766
-}
+{"timestamp":"2025-08-12T18:16:23.667689Z","level":"INFO","fields":{"message":"Processing 18 files in parallel"},"target":"nano_web::routes"}
+{"timestamp":"2025-08-12T18:16:23.878820Z","level":"INFO","fields":{"message":"Routes populated: 20 routes"},"target":"nano_web::routes"}
+{"timestamp":"2025-08-12T18:16:23.878843Z","level":"INFO","fields":{"message":"Routes loaded: 20"},"target":"nano_web::server"}
+{"timestamp":"2025-08-12T18:16:23.878998Z","level":"INFO","fields":{"message":"Starting server on 0.0.0.0:3001"},"target":"nano_web::server"}
 ```
 
 ## 🛠️ Building from Source
