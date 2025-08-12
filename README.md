@@ -56,12 +56,6 @@ mise install ubi:radiosilence/nano-web
 cargo install nano-web
 ```
 
-### Install via Homebrew
-
-```bash
-brew install radiosilence/nano-web/nano-web
-```
-
 ### Download Binary
 
 Pre-built binaries available on [GitHub Releases](https://github.com/radiosilence/nano-web/releases).
