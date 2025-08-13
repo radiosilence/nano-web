@@ -263,6 +263,9 @@ impl NanoWeb {
             let route = route_ref.value().clone();
             drop(route_ref); // Release the reference early
 
+            // &*route.path - Arc<PathBuf> -> PathBuf -> &PathBuf -> &Path
+            // std::fs::metadata needs AsRef<Path>, so we dereference Arc then take reference
+            // Alternative: route.path.as_ref() but &* is more idiomatic in Rust
             let metadata = std::fs::metadata(&*route.path)?;
             let modified = metadata.modified()?;
 
