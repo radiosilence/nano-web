@@ -152,7 +152,7 @@ impl NanoWeb {
 
     // WHY THIS ISN'T CachedRoute::new() - This method needs access to NanoWeb's static_cache
     // to store memory-mapped files (line 150). It also needs self.file_path_to_url() and
-    // self.generate_fast_etag() methods. Moving this to CachedRoute would require passing
+    // self.generate_etag() methods. Moving this to CachedRoute would require passing
     // the cache and utility methods, making the API more complex.
     fn create_route(
         &self,
@@ -196,8 +196,8 @@ impl NanoWeb {
         };
 
         let compressed = CompressedContent::new(processed_content, mime_config.is_compressible)?;
-        let etag = self.generate_fast_etag(&modified, &compressed.plain);
-        let last_modified = self.format_fast_http_date(modified);
+        let etag = self.generate_etag(&modified, &compressed.plain);
+        let last_modified = self.format_http_date(modified);
 
         let headers = Arc::new(CachedRouteHeaders {
             content_type: Arc::from(mime_config.mime_type.as_str()),
@@ -234,7 +234,7 @@ impl NanoWeb {
         Ok(Arc::from(url_path.as_str()))
     }
 
-    fn generate_fast_etag(&self, modified: &SystemTime, content: &[u8]) -> String {
+    fn generate_etag(&self, modified: &SystemTime, content: &[u8]) -> String {
         use std::time::UNIX_EPOCH;
 
         let timestamp = modified
@@ -246,7 +246,7 @@ impl NanoWeb {
         format!("\"{:x}-{:x}\"", timestamp, content.len())
     }
 
-    fn format_fast_http_date(&self, time: SystemTime) -> String {
+    fn format_http_date(&self, time: SystemTime) -> String {
         let datetime = chrono::DateTime::<chrono::Utc>::from(time);
         datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
     }
