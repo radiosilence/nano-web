@@ -208,21 +208,8 @@ jobs:
             ghcr.io/${{ github.repository }}:${VERSION}-arm64
 
           # Clean up individual arch images
-          curl -L \
-            -X DELETE \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/user/packages/container/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]' | cut -d'/' -f2)/versions" | \
-            jq -r ".[] | select(.metadata.container.tags[] | contains(\"${VERSION}-amd64\") or contains(\"${VERSION}-arm64\")) | .id" | \
-            while read version_id; do
-              curl -L \
-                -X DELETE \
-                -H "Accept: application/vnd.github+json" \
-                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "https://api.github.com/user/packages/container/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]' | cut -d'/' -f2)/versions/${version_id}"
-            done
+          docker manifest rm ghcr.io/${{ github.repository }}:${VERSION}-amd64 || true
+          docker manifest rm ghcr.io/${{ github.repository }}:${VERSION}-arm64 || true
 
   create-release:
     name: Create GitHub Release
