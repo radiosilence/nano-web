@@ -173,8 +173,8 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-arm64
 
           # Clean up individual arch images
-          docker manifest rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-amd64
-          docker manifest rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-arm64
+          docker buildx imagetools rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-amd64
+          docker buildx imagetools rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SAFE_NAME}-arm64
 
       - name: Show built images
         if: github.event_name != 'pull_request'
