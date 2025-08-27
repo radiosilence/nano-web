@@ -208,8 +208,8 @@ jobs:
             ghcr.io/${{ github.repository }}:${VERSION}-arm64
 
           # Clean up individual arch images
-          docker manifest rm ghcr.io/${{ github.repository }}:${VERSION}-amd64 || true
-          docker manifest rm ghcr.io/${{ github.repository }}:${VERSION}-arm64 || true
+          docker buildx imagetools rm ghcr.io/${{ github.repository }}:${VERSION}-amd64
+          docker buildx imagetools rm ghcr.io/${{ github.repository }}:${VERSION}-arm64
 
   create-release:
     name: Create GitHub Release
