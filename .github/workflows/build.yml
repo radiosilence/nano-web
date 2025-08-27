@@ -60,6 +60,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [[ "${{ matrix.name }}" = *"-musl" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends \
+              --allow-unauthenticated musl-tools
+          fi
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
