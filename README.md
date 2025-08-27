@@ -41,7 +41,7 @@ Based on trying other high-performance servers locally, I reckon nano-web would 
 - Health endpoint at `/_health`
 - Runtime environment variable injection
 - JSON/console logging
-- Docker images under 20MB
+- Docker image size of ~5MB
 
 ## 📦 Installation
 
