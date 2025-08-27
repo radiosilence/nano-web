@@ -17,19 +17,23 @@ Static file server built with Rust. Serves files from memory with pre-compressed
 - Lock-free concurrent HashMap routing
 - Zero-copy serving with Bytes
 
-Benchmark (M3 Max):
+Benchmark (M3 Max 36GB):
 
 ```bash
-wrk -c 100 -d 10 -t 100 http://localhost:3000
+wrk -c 50 -d 10 -t 50 http://localhost:3000
 Running 10s test @ http://localhost:3000
-  100 threads and 100 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   766.28us  125.68us   4.42ms   92.26%
-    Req/Sec     1.31k    69.24     1.54k    93.77%
-  1317792 requests in 10.10s, 7.47GB read
-Requests/sec: 130,479.93
-Transfer/sec:    757.44MB
+ 50 threads and 50 connections
+ Thread Stats   Avg      Stdev     Max   +/- Stdev
+   Latency   328.63us   47.98us   2.86ms   88.05%
+   Req/Sec     3.01k   103.63     3.21k    91.58%
+ 1513328 requests in 10.10s, 8.58GB read
+Requests/sec: 149838.48
+Transfer/sec:    870.24MB
 ```
+
+I know web-server benchmarks are mostly useless, however, this server does very little, and this is it's literal use case (serve file quick!).
+
+Based on trying other high-performance servers locally, I reckon nano-web would place in the top ten in the TechEmpower plaintext webserver benchmarks if ran on their hardware (haven't got around to submitting it yet). It beats out `may-minihttp`, for instance.
 
 ## Features
 
