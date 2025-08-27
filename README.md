@@ -2,11 +2,10 @@
 
 ![CI](https://github.com/radiosilence/nano-web/actions/workflows/ci.yml/badge.svg)
 ![Build](https://github.com/radiosilence/nano-web/actions/workflows/build.yml/badge.svg)
-![Release](https://github.com/radiosilence/nano-web/actions/workflows/release.yml/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/nano-web.svg)](https://crates.io/crates/nano-web)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-Static file server built with Rust. Serves files from memory with pre-compressed variants.
+Static file server built with Rust. Pre-loads and pre-compresses _all_ files at startup to be served with near-zero latency or waiting for disk-caching.
 
 ## Performance
 
@@ -226,38 +225,7 @@ cargo run -- serve ./public --dev --spa
 cargo watch -x "run -- serve ./public --dev"
 ```
 
-## 🌰 Advanced: Unikernels
-
-Deploy as unikernels with [Nanos](https://nanos.org):
-
-```json
-{
-  "Dirs": ["public"],
-  "Env": {
-    "SPA_MODE": "1",
-    "PORT": "8080"
-  },
-  "RunConfig": {
-    "Ports": ["8080"]
-  }
-}
-```
-
-```bash
-ops image create -c config.json --package nano-web:latest -i my-website
-ops instance create my-website --port 8080
-```
-
-## Architecture
-
-- HTTP: Axum + Hyper
-- Routing: Lock-free DashMap with FxHash
-- Compression: Parallel pre-compression at startup
-- Memory: Zero-copy serving with Bytes
-- Security: Path validation, security headers
-- Runtime: Tokio async
-
-Compared to previous Go version: 70% faster (130k vs 76k req/sec), lower latency, no GC overhead.
+Compared to previous Go version: 80% faster (150k vs 76k req/sec), lower latency.
 
 ## 📄 License
 
