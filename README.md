@@ -10,8 +10,6 @@ Static file server built with Rust. Serves files from memory with pre-compressed
 
 ## Performance
 
-130,000+ requests/sec with sub-millisecond latency:
-
 - Axum/Hyper HTTP stack
 - Files pre-compressed at startup (brotli/gzip/zstd)
 - Lock-free concurrent HashMap routing
@@ -38,7 +36,6 @@ Based on trying other high-performance servers locally, I reckon nano-web would 
 ## Features
 
 - In-memory file serving with compression
-- Security headers
 - SPA mode with index.html fallback
 - Dev mode with file watching
 - Health endpoint at `/_health`
@@ -125,7 +122,7 @@ docker run -p 3000:3000 -e PORT=3000 -e SPA_MODE=true ghcr.io/radiosilence/nano-
 
 ## ⚡ Runtime Environment Injection
 
-Inject configuration at runtime without rebuilding:
+Inject configuration at runtime without rebuilding, so you can re-use the same image for different things quickly and easily (or distribute it).
 
 ```html
 <!-- Your index.html -->
