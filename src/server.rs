@@ -74,7 +74,7 @@ pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
     // ? operator propagates any bind errors up to caller
     let listener = TcpListener::bind(&addr).await?;
 
-    info!("Starting server on {}", addr);
+    info!("Starting server on http://{}", addr);
     info!("Serving directory: {:?}", config.public_dir);
 
     // axum::serve takes ownership of listener and app, runs until server shuts down
