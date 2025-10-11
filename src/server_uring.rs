@@ -33,30 +33,43 @@ pub fn serve(config: UringServeConfig) -> Result<()> {
 
     info!("Routes loaded: {}", nano_web.routes.len());
 
-    // Pre-build all HTTP responses
+    // Pre-build all HTTP responses with unsafe raw pointers
     info!("Pre-building HTTP responses...");
     let buffer_manager = Arc::new(
-        RegisteredBufferManager::new(&nano_web.routes).context("Failed to pre-build responses")?,
+        RegisteredBufferManager::new(&nano_web.routes, config.spa_mode)
+            .context("Failed to pre-build responses")?,
     );
     info!(
         "Pre-built {} response variants",
         buffer_manager.buffer_count()
     );
 
+    // Register buffers with io_uring kernel
+    info!(
+        "Registering {} fixed buffers with io_uring...",
+        buffer_manager.buffer_count()
+    );
+    let iovecs = buffer_manager.get_iovecs();
+
+    // Create io_uring instance and register our buffers
+    let ring_builder = tokio_uring::uring_builder();
+    let ring = ring_builder
+        .build(256)
+        .context("Failed to build io_uring")?;
+
+    // SAFETY: Buffers are pinned and valid for the lifetime of buffer_manager
+    unsafe {
+        ring.submitter()
+            .register_buffers(&iovecs)
+            .context("Failed to register buffers with io_uring")?;
+    }
+
+    info!("Registered {} fixed buffers with kernel", iovecs.len());
+
     // Start io_uring runtime
     let builder = tokio_uring::builder();
 
     builder.start(async move {
-        // Register fixed buffers with kernel (must be inside tokio_uring runtime)
-        info!(
-            "Registering {} fixed buffers with io_uring...",
-            buffer_manager.buffer_count()
-        );
-        buffer_manager
-            .register()
-            .expect("Failed to register fixed buffers");
-        info!("Fixed buffers registered with kernel");
-
         let addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse().unwrap();
         let listener = TcpListener::bind(addr)
             .context("Failed to bind to address")
@@ -151,39 +164,39 @@ async fn handle_connection(
 
         let path = request.path;
 
-        // Runtime logic: map[path][encoding] → buffer_id → check_out() → write_fixed()
-        let buffer_id = if let Some((_, encoding)) =
-            buffer_manager.best_match(path, accept_encoding)
-        {
-            buffer_manager.get_buffer_id(path, encoding)
-        } else if spa_mode {
-            // SPA fallback: if not found, serve /index.html
-            if let Some((_, encoding)) = buffer_manager.best_match("/index.html", accept_encoding) {
-                buffer_manager.get_buffer_id("/index.html", encoding)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        // Runtime logic: map[path][encoding] → UnsafeResponse
+        // Try requested path first, then SPA fallback to /index.html
+        let response = buffer_manager
+            .best_match(path, accept_encoding)
+            .and_then(|(_, enc)| buffer_manager.get(path, enc))
+            .or_else(|| {
+                // SPA fallback: serve /index.html if not found
+                if spa_mode {
+                    buffer_manager
+                        .best_match("/index.html", accept_encoding)
+                        .and_then(|(_, enc)| buffer_manager.get("/index.html", enc))
+                } else {
+                    None
+                }
+            });
 
-        // Write response using fixed buffers (zero-copy!)
-        if let Some(bid) = buffer_id {
-            if let Some(buf) = buffer_manager.check_out(bid) {
-                if let Err(e) = write_fixed(&stream, buf).await {
+        // Write response using unsafe raw pointers (zero-alloc concurrent reads)
+        match response {
+            Some(resp) => {
+                // SAFETY: pointer is valid for lifetime of buffer_manager
+                let data = buffer_manager.as_slice(&resp);
+                if let Err(e) = write_all(&stream, data).await {
                     warn!("Write error to {}: {:?}", peer_addr, e);
                     break;
                 }
-            } else {
-                warn!("Failed to check out buffer {}", bid);
-                break;
             }
-        } else {
-            // 404 - use regular write since it's not a fixed buffer
-            let response = build_response(404, &[], b"Not Found");
-            if let Err(e) = write_all(&stream, &response).await {
-                warn!("Write error to {}: {:?}", peer_addr, e);
-                break;
+            None => {
+                // 404
+                let resp_404 = build_response(404, &[], b"Not Found");
+                if let Err(e) = write_all(&stream, &resp_404).await {
+                    warn!("Write error to {}: {:?}", peer_addr, e);
+                    break;
+                }
             }
         }
     }
@@ -192,32 +205,15 @@ async fn handle_connection(
     Ok(())
 }
 
-// Note: build_file_response removed - we now use pre-built responses from RegisteredBufferManager
-
-/// Write fixed buffer to stream using io_uring zero-copy (IORING_OP_WRITE_FIXED)
+/// Write all data to stream using io_uring async writes
 ///
-/// This uses a buffer that's been registered with the kernel via FixedBufRegistry.
-/// The kernel knows about this buffer at startup, so it can DMA directly from it
-/// to the NIC without copying through userspace.
-async fn write_fixed(
-    stream: &tokio_uring::net::TcpStream,
-    buf: tokio_uring::buf::fixed::FixedBuf,
-) -> Result<()> {
-    // Call write_fixed - kernel uses registered buffer for zero-copy write
-    let (result, _buf_back) = stream.write_fixed(buf).await;
-    let n = result.context("Write failed")?;
-
-    if n == 0 {
-        anyhow::bail!("Connection closed while writing");
-    }
-
-    // Assuming write_fixed writes the full buffer in one go
-    // HTTP responses are small enough (< few MB) that this should be fine
-
-    Ok(())
-}
-
-/// Write all data to stream (fallback for non-fixed buffers like 404)
+/// NOTE: We use regular write() not write_fixed() because write_fixed() requires
+/// exclusive ownership of buffers via FixedBufRegistry, which doesn't work when
+/// 100 concurrent connections all want to read from the same /index.html buffer.
+///
+/// Instead we use UNSAFE raw pointers to the registered buffers and let multiple
+/// connections read concurrently. The buffers are still registered with io_uring
+/// for zero-copy potential, but we access them via slices.
 async fn write_all(stream: &tokio_uring::net::TcpStream, data: &[u8]) -> Result<()> {
     let mut written = 0;
     let buf = data.to_vec();

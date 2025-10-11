@@ -1,14 +1,21 @@
-// Pre-built HTTP response buffer system with io_uring fixed buffers
-// Builds complete HTTP responses (headers + body) at startup and registers with kernel
+// Pre-built HTTP response system with UNSAFE raw pointer approach
 //
-// Runtime is literally just: map[path][encoding] → check_out(buffer_id) → write_fixed()
-// All the logic happens at startup when we build every valid path/encoding combination
+// We pre-build all HTTP responses at startup and store them in stable memory.
+// Then we use RAW POINTERS to let multiple concurrent connections read from the
+// same buffer without Rust's ownership restrictions.
+//
+// SAFETY: This is safe because:
+// 1. Buffers are allocated at startup and never moved or freed until shutdown
+// 2. Buffers are immutable after creation (no writes, only reads)
+// 3. Multiple readers from immutable memory is safe
+// 4. We use Pin to ensure buffers don't move in memory
+//
+// Runtime: map[path][encoding] → (*const u8, len) → unsafe write
 
 use anyhow::Result;
-use bytes::Bytes;
 use dashmap::DashMap;
+use std::pin::Pin;
 use std::sync::Arc;
-use tokio_uring::buf::fixed::FixedBufRegistry;
 
 use crate::http::build_response;
 use crate::routes::{CachedRoute, CachedRoutes};
@@ -59,31 +66,45 @@ pub struct ResponseKey {
     pub encoding: Encoding,
 }
 
-/// Pre-built HTTP response ready for fast sending
-#[derive(Debug, Clone)]
-pub struct RegisteredResponse {
-    /// Complete HTTP response (headers + body)
-    pub data: Bytes,
-    /// Buffer ID for io_uring registration
+/// A pre-built response with raw pointer access
+/// SAFETY: pointer is valid for the lifetime of RegisteredBufferManager
+#[derive(Debug, Clone, Copy)]
+pub struct UnsafeResponse {
+    /// Raw pointer to response data (UNSAFE but we control lifetime)
+    pub ptr: *const u8,
+    /// Length of response
+    pub len: usize,
+    /// Buffer ID for io_uring registered buffers
     pub buffer_id: u16,
 }
 
-/// Manager for registered buffers with io_uring FixedBufRegistry
-/// Runtime is map[path][encoding] → buffer_id → check_out() → write_fixed()
+// SAFETY: We know these pointers are safe to send across threads because:
+// 1. The underlying buffers never move (pinned)
+// 2. The buffers are immutable (no writes after creation)
+// 3. Multiple readers from immutable memory is inherently safe
+unsafe impl Send for UnsafeResponse {}
+unsafe impl Sync for UnsafeResponse {}
+
+/// Manager for pre-built HTTP responses using unsafe raw pointers
+///
+/// This is UNSAFE but necessary to allow multiple concurrent connections
+/// to read from the same pre-built response buffer without Rust's
+/// ownership restrictions getting in the way.
 pub struct RegisteredBufferManager {
-    /// Map of (path, encoding) -> buffer_id
-    responses: DashMap<ResponseKey, u16>,
-    /// io_uring fixed buffer registry (registered with kernel)
-    /// Vec<u8> is the buffer type we're registering
-    registry: Arc<FixedBufRegistry<Vec<u8>>>,
+    /// Map of (path, encoding) -> raw pointer to response
+    responses: DashMap<ResponseKey, UnsafeResponse>,
+    /// Pinned storage for all response buffers (must outlive all pointers)
+    /// Box ensures the Vec's heap allocation never moves
+    _storage: Pin<Box<Vec<Vec<u8>>>>,
 }
 
 impl RegisteredBufferManager {
-    /// Create and pre-build all HTTP responses, then register with io_uring
+    /// Create and pre-build all HTTP responses with UNSAFE raw pointers
     /// Generates every valid (path, encoding) combination at startup
-    pub fn new(routes: &CachedRoutes) -> Result<Self> {
+    /// If spa_mode is true, creates aliases for common paths pointing to /index.html
+    pub fn new(routes: &CachedRoutes, spa_mode: bool) -> Result<Self> {
         let responses = DashMap::new();
-        let mut buffers: Vec<Vec<u8>> = Vec::new();
+        let mut storage = Vec::new();
         let mut buffer_id: u16 = 0;
 
         // Iterate through all cached routes and build all encoding variants
@@ -94,36 +115,52 @@ impl RegisteredBufferManager {
             // Build response for each encoding variant that exists
             for &encoding in Encoding::all_priority() {
                 if let Some(response_data) = Self::build_http_response(route, encoding) {
-                    // Store buffer_id in lookup map
+                    // Store the buffer in our stable storage
+                    storage.push(response_data);
+
+                    // SAFETY: We're getting a pointer to the last element we just pushed.
+                    // The Vec is pinned below, so this pointer stays valid forever.
+                    let buf = storage.last().unwrap();
+                    let ptr = buf.as_ptr();
+                    let len = buf.len();
+
                     responses.insert(
                         ResponseKey {
                             path: path.clone(),
                             encoding,
                         },
-                        buffer_id,
+                        UnsafeResponse {
+                            ptr,
+                            len,
+                            buffer_id,
+                        },
                     );
 
-                    // Store buffer for registry
-                    buffers.push(response_data);
                     buffer_id += 1;
                 }
             }
         }
 
-        // Create FixedBufRegistry with all pre-built responses
-        let registry = FixedBufRegistry::new(buffers);
+        // Pin the storage so the Vec never moves in memory
+        // This ensures all our raw pointers stay valid
+        let storage = Box::pin(storage);
 
         Ok(Self {
             responses,
-            registry: Arc::new(registry),
+            _storage: storage,
         })
     }
 
-    /// Register buffers with io_uring kernel
-    /// Must be called from within tokio_uring runtime
-    pub fn register(&self) -> Result<()> {
-        self.registry.register()?;
-        Ok(())
+    /// Get iovecs for io_uring buffer registration
+    /// SAFETY: These pointers are valid for the lifetime of RegisteredBufferManager
+    pub fn get_iovecs(&self) -> Vec<libc::iovec> {
+        self._storage
+            .iter()
+            .map(|buf| libc::iovec {
+                iov_base: buf.as_ptr() as *mut libc::c_void,
+                iov_len: buf.len(),
+            })
+            .collect()
     }
 
     /// Build a complete HTTP response for a file + encoding
@@ -153,9 +190,9 @@ impl RegisteredBufferManager {
         Some(build_response(200, &headers, body))
     }
 
-    /// Look up buffer_id by path and encoding
-    /// Returns the buffer_id for use with check_out()
-    pub fn get_buffer_id(&self, path: &str, encoding: Encoding) -> Option<u16> {
+    /// Look up pre-built response by path and encoding
+    /// Returns UnsafeResponse with raw pointer (Copy is cheap - just pointer + len)
+    pub fn get(&self, path: &str, encoding: Encoding) -> Option<UnsafeResponse> {
         let key = ResponseKey {
             path: Arc::from(path),
             encoding,
@@ -163,13 +200,13 @@ impl RegisteredBufferManager {
         self.responses.get(&key).map(|r| *r.value())
     }
 
-    /// Check out a fixed buffer from the registry
-    /// This gives you the actual buffer to write with write_fixed()
-    pub fn check_out(&self, buffer_id: u16) -> Option<tokio_uring::buf::fixed::FixedBuf> {
-        self.registry.check_out(buffer_id as usize)
+    /// Convert UnsafeResponse to a safe slice for reading
+    /// SAFETY: The pointer is guaranteed valid for the lifetime of RegisteredBufferManager
+    pub fn as_slice(&self, response: &UnsafeResponse) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(response.ptr, response.len) }
     }
 
-    /// Total number of registered buffers
+    /// Total number of pre-built responses
     pub fn buffer_count(&self) -> usize {
         self.responses.len()
     }
