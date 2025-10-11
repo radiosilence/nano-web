@@ -171,8 +171,9 @@ async fn handle_connection(
 
 /// Build HTTP response for a file
 fn build_file_response(content: &Arc<CompressedContent>, content_type: &Arc<str>) -> Vec<u8> {
-    // Use the uncompressed content for now (io_uring with registered buffers would use this)
-    let body = &content.original;
+    // Use the plain (uncompressed) content for now
+    // TODO: Use compressed variants based on Accept-Encoding header
+    let body = &content.plain;
 
     let headers = [
         ("Content-Type", content_type.as_ref()),
@@ -186,7 +187,7 @@ fn build_file_response(content: &Arc<CompressedContent>, content_type: &Arc<str>
 /// Write all data to stream
 async fn write_all(stream: &tokio_uring::net::TcpStream, data: &[u8]) -> Result<()> {
     let mut written = 0;
-    let mut buf = data.to_vec();
+    let buf = data.to_vec();
 
     while written < data.len() {
         let slice = buf[written..].to_vec();

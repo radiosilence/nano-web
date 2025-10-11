@@ -10,6 +10,6 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/nano-web /usr/local/bin/nano-web
-COPY ./test-public /public
+COPY ./public /public
 EXPOSE 3000
 CMD ["/usr/local/bin/nano-web", "serve", "/public", "--port", "3000"]
