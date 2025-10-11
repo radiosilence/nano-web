@@ -9,26 +9,40 @@ Static file server built with Rust. Pre-loads and pre-compresses _all_ files at 
 
 ## Performance
 
+### Architecture
+
+**O(1) Lookup Table**: Every file/encoding combo pre-baked into HashMap at startup. No disk I/O, no compression at runtime, no header serialization per-request.
+
+**Userspace (default)**:
+
 - Axum/Hyper HTTP stack
-- Files pre-compressed at startup (brotli/gzip/zstd)
-- Lock-free concurrent HashMap routing
-- Zero-copy serving with Bytes
+- DashMap with FxHash for lock-free concurrent access
+- Pre-compression at startup (brotli 24%, gzip 31%, zstd 31%)
+- Zero-copy serving via `Arc<Vec<u8>>` wrapped in `Bytes`
 
-Benchmark (M3 Max 36GB):
+**eBPF/XDP (Linux only, optional)**:
 
-```bash
-wrk -c 50 -d 10 -t 50 http://localhost:3000
+- Kernel-space packet processing bypasses entire network stack
+- Serves responses directly from XDP hook (before TCP processing)
+- Automatic fallback to userspace for complex requests
+- Compile with `--features ebpf` and run on Linux to enable
+
+### Userspace Benchmark
+
+M3 Max 36GB, wrk -c 50 -d 10 -t 50:
+
+```
 Running 10s test @ http://localhost:3000
  50 threads and 50 connections
  Thread Stats   Avg      Stdev     Max   +/- Stdev
-   Latency   328.63us   47.98us   2.86ms   88.05%
-   Req/Sec     3.01k   103.63     3.21k    91.58%
- 1513328 requests in 10.10s, 8.58GB read
-Requests/sec: 149838.48
-Transfer/sec:    870.24MB
+   Latency   334.00us   48.12us   2.91ms   87.94%
+   Req/Sec     2.94k   107.89     3.18k    90.20%
+ 1477802 requests in 10.10s, 8.38GB read
+Requests/sec: 147,000 req/s
+Transfer/sec:    850MB/s
 ```
 
-I know web-server benchmarks are mostly useless, however, this server does very little, and this is it's literal use case (serve file quick!).
+80% faster than the previous Go version (147k vs 76k req/sec).
 
 ### TechEmpower Benchmarks
 
@@ -212,12 +226,39 @@ git clone https://github.com/radiosilence/nano-web.git
 cd nano-web
 cargo build --release
 
+# Build with eBPF support (Linux only)
+cargo build --release --features ebpf
+
 # Run tests
 cargo test
 
 # Run benchmarks
 cargo bench
 ```
+
+### eBPF/XDP Kernel Acceleration
+
+**Linux only**. Serves HTTP responses directly from kernel space, bypassing the entire network stack.
+
+**Requirements**:
+
+- Linux kernel 5.10+
+- CAP_NET_ADMIN capability
+- Clang/LLVM for eBPF compilation
+
+**Build**:
+
+```bash
+# Compile eBPF program
+cd ebpf && make
+
+# Build Rust with eBPF feature
+cargo build --release --features ebpf
+```
+
+**Runtime**: eBPF auto-detects at startup. Falls back to userspace if unavailable or on non-Linux platforms. Handles simple GET requests in kernel, complex requests (range, POST, etc) in userspace.
+
+**Limitations**: eBPF responses capped at 4KB due to kernel stack limits. Larger responses fall back to userspace automatically.
 
 ### Development
 
@@ -228,8 +269,6 @@ cargo run -- serve ./public --dev --spa
 # Watch for changes
 cargo watch -x "run -- serve ./public --dev"
 ```
-
-Compared to previous Go version: 80% faster (150k vs 76k req/sec), lower latency.
 
 ## 📄 License
 
