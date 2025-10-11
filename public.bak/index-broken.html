@@ -1,0 +1,10 @@
+<h1>helloa world!!!</h1>
+<script type="module">
+  import { z } from "https://unpkg.com/zod@3.25.30/dist/esm/index.js";
+  const EnvSchema = z.object({ API_URL: z.string().optional() });
+  // You can wrap the escaped JSON in a string and parse it.
+  window.ENV = EnvSchema.parse(JSON.parse("{{.EscapedJson}}"));
+  // You can pass in the raw JSON, but this is invalid JS due to the tempalte tag
+  window.ENV2 = EnvSchema.parse({{.Json}});
+  console.log(window.ENV, window.ENV2,  z);
+</script>

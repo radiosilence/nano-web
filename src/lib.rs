@@ -13,6 +13,9 @@ pub mod registered_buffers;
 #[cfg(target_os = "linux")]
 pub mod server_uring;
 
+#[cfg(target_os = "linux")]
+pub mod server_multiuring;
+
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn init_logging(level: &str, format: &str) {

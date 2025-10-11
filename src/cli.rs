@@ -166,15 +166,17 @@ impl FinalServeConfig {
     async fn serve(self) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
-            // Use io_uring on Linux for maximum performance
-            let config = crate::server_uring::UringServeConfig {
+            // Use multi-threaded io_uring with CPU pinning for C10M performance
+            let num_cpus = num_cpus::get();
+            let config = crate::server_multiuring::MultiUringConfig {
                 public_dir: self.public_dir,
                 port: self.port,
                 dev: self.dev,
                 spa_mode: self.spa_mode,
                 config_prefix: self.config_prefix,
+                num_threads: num_cpus,
             };
-            crate::server_uring::serve(config)
+            crate::server_multiuring::serve(config)
         }
 
         #[cfg(not(target_os = "linux"))]

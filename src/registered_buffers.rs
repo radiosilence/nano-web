@@ -124,17 +124,31 @@ impl RegisteredBufferManager {
                     let ptr = buf.as_ptr();
                     let len = buf.len();
 
+                    let unsafe_response = UnsafeResponse {
+                        ptr,
+                        len,
+                        buffer_id,
+                    };
+
+                    // Insert main path
                     responses.insert(
                         ResponseKey {
                             path: path.clone(),
                             encoding,
                         },
-                        UnsafeResponse {
-                            ptr,
-                            len,
-                            buffer_id,
-                        },
+                        unsafe_response,
                     );
+
+                    // If this is /index.html, also register it as /
+                    if path.as_ref() == "/index.html" {
+                        responses.insert(
+                            ResponseKey {
+                                path: Arc::from("/"),
+                                encoding,
+                            },
+                            unsafe_response,
+                        );
+                    }
 
                     buffer_id += 1;
                 }

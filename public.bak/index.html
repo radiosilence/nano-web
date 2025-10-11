@@ -1,0 +1,180 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>nano-web - io_uring Zero-Copy Test</title>
+        <style>
+            body {
+                font-family: "Courier New", monospace;
+                max-width: 1200px;
+                margin: 50px auto;
+                padding: 20px;
+                background: #0a0e27;
+                color: #00ff41;
+                line-height: 1.6;
+            }
+            h1 {
+                color: #ff6b35;
+                text-shadow: 2px 2px 4px rgba(255, 107, 53, 0.3);
+            }
+            h2 {
+                color: #00d9ff;
+                border-bottom: 2px solid #00d9ff;
+                padding-bottom: 5px;
+            }
+            .architecture {
+                background: #1a1f3a;
+                border-left: 4px solid #ff6b35;
+                padding: 20px;
+                margin: 20px 0;
+                border-radius: 4px;
+            }
+            code {
+                background: #0d1117;
+                padding: 2px 6px;
+                border-radius: 3px;
+                color: #79c0ff;
+            }
+            .feature {
+                margin: 15px 0;
+                padding: 15px;
+                background: #161b33;
+                border-radius: 4px;
+            }
+            .performance {
+                color: #7ee787;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>🚀 nano-web: io_uring Zero-Copy Architecture</h1>
+
+        <div class="architecture">
+            <h2>Runtime Philosophy: Do Nothing</h2>
+            <p>
+                This page is being served from a
+                <code>pre-built buffer</code> that was registered with the Linux
+                kernel at startup. The server runtime is literally just:
+            </p>
+            <ol>
+                <li>Parse request path and Accept-Encoding header</li>
+                <li>Lookup <code>map[path][encoding]</code></li>
+                <li>Tell kernel which buffer to send</li>
+                <li>Kernel DMAs buffer directly to NIC</li>
+            </ol>
+            <p class="performance">
+                Zero header building. Zero path manipulation. Zero conditional
+                logic. Just integer arithmetic and memory pointers.
+            </p>
+        </div>
+
+        <div class="feature">
+            <h2>Startup Architecture</h2>
+            <p>At startup, we:</p>
+            <ul>
+                <li>Spider all files in <code>/public</code></li>
+                <li>Compress each file (brotli, gzip, zstd)</li>
+                <li>
+                    Build complete HTTP responses (headers + body) for every
+                    (path, encoding) combination
+                </li>
+                <li>
+                    Register all buffers with io_uring via
+                    <code>register_buffers()</code>
+                </li>
+                <li>
+                    Create directory routes (e.g., <code>/about/</code> →
+                    <code>/about/index.html</code>)
+                </li>
+            </ul>
+            <p>
+                Every valid combination exists in memory. Runtime is just
+                picking which one to send.
+            </p>
+        </div>
+
+        <div class="feature">
+            <h2>Pre-Built Response Headers</h2>
+            <p>This response includes:</p>
+            <ul>
+                <li><code>Content-Type</code>: Detected from file extension</li>
+                <li>
+                    <code>Content-Encoding</code>: br/gzip/zstd based on your
+                    Accept-Encoding
+                </li>
+                <li>
+                    <code>ETag</code>: Generated from file timestamp and size
+                </li>
+                <li>
+                    <code>Last-Modified</code>: File modification time in
+                    HTTP-date format
+                </li>
+                <li>
+                    <code>Cache-Control</code>: Appropriate caching directives
+                </li>
+                <li><code>Server</code>: nano-web-uring-zerocopy</li>
+            </ul>
+            <p>All baked into the buffer at startup. Zero runtime overhead.</p>
+        </div>
+
+        <div class="feature">
+            <h2>Why This Matters</h2>
+            <p>
+                Traditional web servers rebuild HTTP headers on every request.
+                They negotiate encodings, check if files exist, read from disk
+                or cache, compress on-the-fly (or check compression cache),
+                build response headers, then send.
+            </p>
+            <p>
+                nano-web with io_uring does all of that
+                <strong>once at startup</strong>. Runtime is pure pointer
+                arithmetic. This is the same philosophy as game engines: bake
+                everything into lookup tables, runtime is just memory fetches.
+            </p>
+            <p class="performance">
+                You could implement this on an FPGA. Wire path/encoding combo
+                directly to memory addresses. No CPU, no context switches, just
+                electrons flowing through gates straight to the NIC.
+            </p>
+        </div>
+
+        <div class="architecture">
+            <h2>Technical Details</h2>
+            <ul>
+                <li>
+                    <strong>Platform:</strong> Linux only (io_uring requires
+                    kernel 5.10+)
+                </li>
+                <li>
+                    <strong>Buffer Registration:</strong>
+                    <code>io_uring::register_buffers()</code>
+                </li>
+                <li>
+                    <strong>Zero-Copy:</strong> Kernel DMAs from registered
+                    buffers to NIC
+                </li>
+                <li>
+                    <strong>Compression:</strong> Brotli (quality 11), Zstd
+                    (level 22), Gzip (best)
+                </li>
+                <li>
+                    <strong>Threshold:</strong> Files &gt; 1KB are compressed
+                </li>
+                <li>
+                    <strong>Runtime:</strong>
+                    <code>map[path][encoding]</code> lookup + kernel write
+                </li>
+            </ul>
+        </div>
+
+        <script type="module">
+            window.ENV = JSON.parse("{{EscapedJson}}");
+            window.ENV_RAW = {{Json}};
+
+            console.log('%c🚀 nano-web', 'color: #ff6b35; font-size: 20px; font-weight: bold;');
+            console.log('%cRuntime: map[path][encoding] → kernel DMA → NIC', 'color: #00ff41;');
+            console.log('Environment:', window.ENV);
+        </script>
+    </body>
+</html>

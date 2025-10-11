@@ -55,6 +55,7 @@ dashmap = "6.1"
 memmap2 = "0.9"
 rayon = "1.10"
 urlencoding = "2.1"
+num_cpus = "1.16"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tokio-uring = { version = "0.5", features = ["bytes"] }
