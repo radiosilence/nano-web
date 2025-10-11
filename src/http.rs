@@ -57,11 +57,22 @@ pub fn parse_request(buf: &[u8]) -> Result<(HttpRequest<'_>, usize), ParseError>
     ))
 }
 
-/// Build HTTP response
+/// Build HTTP response (optionally without body for HEAD requests)
 pub fn build_response(status: u16, headers: &[(&str, &str)], body: &[u8]) -> Vec<u8> {
+    build_response_with_body(status, headers, body, true)
+}
+
+/// Build HTTP response with control over including body
+pub fn build_response_with_body(
+    status: u16,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    include_body: bool,
+) -> Vec<u8> {
     let status_text = match status {
         200 => "OK",
         404 => "Not Found",
+        405 => "Method Not Allowed",
         500 => "Internal Server Error",
         _ => "Unknown",
     };
@@ -84,8 +95,10 @@ pub fn build_response(status: u16, headers: &[(&str, &str)], body: &[u8]) -> Vec
     // End headers
     response.extend_from_slice(b"\r\n");
 
-    // Add body
-    response.extend_from_slice(body);
+    // Add body (unless this is a HEAD request)
+    if include_body {
+        response.extend_from_slice(body);
+    }
 
     response
 }

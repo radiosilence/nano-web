@@ -9,7 +9,7 @@ use tokio_uring::net::TcpListener;
 use tracing::{debug, info, warn};
 
 use crate::compression::CompressedContent;
-use crate::http::{build_response, parse_request};
+use crate::http::{build_response, build_response_with_body, parse_request};
 use crate::routes::NanoWeb;
 
 pub struct UringServeConfig {
@@ -112,19 +112,33 @@ async fn handle_connection(
 
         debug!("{} {} from {}", request.method, request.path, peer_addr);
 
-        // Only support GET
-        if request.method != "GET" {
+        // Only support GET and HEAD
+        if request.method != "GET" && request.method != "HEAD" {
             let response = build_response(405, &[], b"Method Not Allowed");
             let _ = write_all(&stream, &response).await;
             continue;
         }
+
+        let is_head = request.method == "HEAD";
+
+        // Get Accept-Encoding header
+        let accept_encoding = request
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("accept-encoding"))
+            .map(|(_, v)| *v)
+            .unwrap_or("");
 
         // Look up route
         let path = request.path;
         let response = match nano_web.routes.get(path) {
             Some(entry) => {
                 // Found the file
-                build_file_response(&entry.value().content, &entry.value().headers.content_type)
+                build_file_response(
+                    &entry.value().content,
+                    &entry.value().headers.content_type,
+                    accept_encoding,
+                )
             }
             None => {
                 // Try index.html for directories
@@ -139,6 +153,7 @@ async fn handle_connection(
                     Some(entry) => build_file_response(
                         &entry.value().content,
                         &entry.value().headers.content_type,
+                        accept_encoding,
                     ),
                     None => {
                         // SPA mode fallback
@@ -147,6 +162,7 @@ async fn handle_connection(
                                 Some(entry) => build_file_response(
                                     &entry.value().content,
                                     &entry.value().headers.content_type,
+                                    accept_encoding,
                                 ),
                                 None => build_response(404, &[], b"Not Found"),
                             }
@@ -169,17 +185,46 @@ async fn handle_connection(
     Ok(())
 }
 
-/// Build HTTP response for a file
-fn build_file_response(content: &Arc<CompressedContent>, content_type: &Arc<str>) -> Vec<u8> {
-    // Use the plain (uncompressed) content for now
-    // TODO: Use compressed variants based on Accept-Encoding header
-    let body = &content.plain;
+/// Build HTTP response for a file with compression support
+fn build_file_response(
+    content: &Arc<CompressedContent>,
+    content_type: &Arc<str>,
+    accept_encoding: &str,
+) -> Vec<u8> {
+    // Select best compression based on Accept-Encoding header
+    // Priority: brotli > zstd > gzip > plain
+    let (body, encoding) = if accept_encoding.contains("br") {
+        if let Some(ref brotli) = content.brotli {
+            (brotli, Some("br"))
+        } else {
+            (&content.plain, None)
+        }
+    } else if accept_encoding.contains("zstd") {
+        if let Some(ref zstd) = content.zstd {
+            (zstd, Some("zstd"))
+        } else {
+            (&content.plain, None)
+        }
+    } else if accept_encoding.contains("gzip") {
+        if let Some(ref gzip) = content.gzip {
+            (gzip, Some("gzip"))
+        } else {
+            (&content.plain, None)
+        }
+    } else {
+        (&content.plain, None)
+    };
 
-    let headers = [
+    let mut headers = vec![
         ("Content-Type", content_type.as_ref()),
         ("Cache-Control", "public, max-age=3600"),
         ("Server", "nano-web-uring"),
     ];
+
+    // Add Content-Encoding header if compressed
+    if let Some(enc) = encoding {
+        headers.push(("Content-Encoding", enc));
+    }
 
     build_response(200, &headers, body)
 }
