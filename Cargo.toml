@@ -17,6 +17,7 @@ exclude = ["public/", ".github/", "docs/"]
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.5"
 chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
 tokio = { version = "1.47", features = [
     "net",
     "io-util",
@@ -54,6 +55,9 @@ dashmap = "6.1"
 memmap2 = "0.9"
 rayon = "1.10"
 urlencoding = "2.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio-uring = { version = "0.5", features = ["bytes"] }
 
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc = "0.1.43"

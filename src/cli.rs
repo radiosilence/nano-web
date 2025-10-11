@@ -164,16 +164,32 @@ struct FinalServeConfig {
 
 impl FinalServeConfig {
     async fn serve(self) -> Result<()> {
-        // Use Axum with our compression and caching system
-        let config = crate::server::AxumServeConfig {
-            public_dir: self.public_dir,
-            port: self.port,
-            dev: self.dev,
-            spa_mode: self.spa_mode,
-            config_prefix: self.config_prefix,
-            log_requests: self.log_requests,
-        };
-        crate::server::start_axum_server(config).await
+        #[cfg(target_os = "linux")]
+        {
+            // Use io_uring on Linux for maximum performance
+            let config = crate::server_uring::UringServeConfig {
+                public_dir: self.public_dir,
+                port: self.port,
+                dev: self.dev,
+                spa_mode: self.spa_mode,
+                config_prefix: self.config_prefix,
+            };
+            crate::server_uring::serve(config)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            // Use Axum on non-Linux platforms (Darwin, Windows, etc.)
+            let config = crate::server::AxumServeConfig {
+                public_dir: self.public_dir,
+                port: self.port,
+                dev: self.dev,
+                spa_mode: self.spa_mode,
+                config_prefix: self.config_prefix,
+                log_requests: self.log_requests,
+            };
+            crate::server::start_axum_server(config).await
+        }
     }
 }
 
