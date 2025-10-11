@@ -1,14 +1,10 @@
 use crate::response_buffer::ResponseBuffer;
 use crate::routes::NanoWeb;
 use anyhow::Result;
-use hyper::body::Bytes;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::net::TcpListener;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, info};
 
 #[derive(Clone)]
@@ -19,12 +15,13 @@ pub struct UltraServeConfig {
     pub config_prefix: String,
 }
 
-/// ULTRA MODE: Raw hyper service with direct buffer lookups
+/// ULTRA MODE: Raw TCP with minimal HTTP parsing and pre-baked response buffers
 /// Request flow:
-/// 1. Parse request path + Accept-Encoding header
-/// 2. O(1) HashMap lookup: (path, encoding) -> ResponseBuffer
-/// 3. Write complete pre-baked buffer to socket
-/// 4. Done
+/// 1. Accept TCP connection
+/// 2. Parse minimal HTTP (GET /path HTTP/1.1 + Accept-Encoding header)
+/// 3. O(1) HashMap lookup: (path, encoding) -> ResponseBuffer
+/// 4. write_all() the complete pre-baked buffer to socket
+/// 5. Done - zero allocations, zero parsing overhead
 pub async fn start_ultra_server(config: UltraServeConfig) -> Result<()> {
     let server = Arc::new(NanoWeb::new());
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
@@ -44,77 +41,99 @@ pub async fn start_ultra_server(config: UltraServeConfig) -> Result<()> {
     // Accept connections in a loop
     loop {
         let (stream, _) = listener.accept().await?;
-        let io = TokioIo::new(stream);
         let server = server.clone();
         let spa_mode = config.spa_mode;
 
         tokio::spawn(async move {
-            let service = service_fn(move |req| {
-                let server = server.clone();
-                async move { handle_request(req, server, spa_mode).await }
-            });
-
-            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                debug!("Connection error: {:?}", err);
+            if let Err(e) = handle_connection(stream, server, spa_mode).await {
+                debug!("Connection error: {:?}", e);
             }
         });
     }
 }
 
-async fn handle_request(
-    req: Request<hyper::body::Incoming>,
+/// Handle raw TCP connection - minimal HTTP parsing
+async fn handle_connection(
+    mut stream: TcpStream,
     server: Arc<NanoWeb>,
     spa_mode: bool,
-) -> Result<Response<http_body_util::Full<Bytes>>, hyper::http::Error> {
-    let path = req.uri().path();
+) -> Result<()> {
+    let mut reader = BufReader::new(&mut stream);
+
+    // Read request line: "GET /path HTTP/1.1"
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line).await?;
+
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
+    if parts.len() < 3 || parts[0] != "GET" {
+        // Only support GET requests
+        let buf = ResponseBuffer::bad_request();
+        stream.write_all(&buf.buffer).await?;
+        stream.flush().await?;
+        return Ok(());
+    }
+
+    let path = parts[1];
 
     // Path validation
     if let Err(e) = crate::path::validate_request_path(path) {
         debug!("Path validation failed for '{}': {}", path, e);
         let buf = ResponseBuffer::bad_request();
-        return Ok(Response::builder().status(StatusCode::BAD_REQUEST).body(
-            http_body_util::Full::new(Bytes::from(buf.buffer.as_ref().clone())),
-        )?);
+        stream.write_all(&buf.buffer).await?;
+        stream.flush().await?;
+        return Ok(());
     }
 
-    // Extract Accept-Encoding
-    let accept_encoding = req
-        .headers()
-        .get(hyper::header::ACCEPT_ENCODING)
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
+    // Read headers to find Accept-Encoding
+    let mut accept_encoding = String::new();
+    loop {
+        let mut header_line = String::new();
+        reader.read_line(&mut header_line).await?;
+
+        // Empty line means end of headers
+        if header_line == "\r\n" || header_line == "\n" {
+            break;
+        }
+
+        // Check for Accept-Encoding header (case-insensitive)
+        if header_line.to_lowercase().starts_with("accept-encoding:") {
+            accept_encoding = header_line
+                .split(':')
+                .nth(1)
+                .unwrap_or("")
+                .trim()
+                .to_string();
+        }
+    }
 
     // ULTRA LOOKUP: O(1) direct buffer retrieval
-    let mut response_buf = server.get_ultra(path, accept_encoding);
+    let mut response_buf = server.get_ultra(path, &accept_encoding);
 
     // Fallback 1: Try with trailing slash
     if response_buf.is_none() && !path.ends_with('/') {
         let path_with_slash = format!("{}/", path);
-        response_buf = server.get_ultra(&path_with_slash, accept_encoding);
+        response_buf = server.get_ultra(&path_with_slash, &accept_encoding);
     }
 
     // Fallback 2: SPA mode
     if response_buf.is_none() && spa_mode {
         debug!("SPA fallback for: {}", path);
-        response_buf = server.get_ultra("/", accept_encoding);
+        response_buf = server.get_ultra("/", &accept_encoding);
     }
 
     match response_buf {
         Some(buf) => {
-            // ZERO-COPY: Bytes wraps Arc<Vec<u8>>, no allocation
-            // Just bump the refcount and blast it to the socket
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(http_body_util::Full::new(Bytes::from(
-                    buf.buffer.as_ref().clone(),
-                )))?)
+            // ZERO-COPY: Just write the Arc<Vec<u8>> buffer to socket
+            // Complete HTTP response already in buffer
+            stream.write_all(&buf.buffer).await?;
         }
         None => {
             debug!("Route not found: {}", path);
             let buf = ResponseBuffer::not_found();
-            Ok(Response::builder().status(StatusCode::NOT_FOUND).body(
-                http_body_util::Full::new(Bytes::from(buf.buffer.as_ref().clone())),
-            )?)
+            stream.write_all(&buf.buffer).await?;
         }
     }
+
+    stream.flush().await?;
+    Ok(())
 }
