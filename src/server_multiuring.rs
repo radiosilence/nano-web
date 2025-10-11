@@ -368,11 +368,16 @@ fn submit_write_registered(
 ) -> Result<()> {
     let conn = connections.get(&conn_id).context("Connection not found")?;
 
-    // FUCK the WriteFixed API - just use regular Write with our unsafe pointer
-    // The buffers are immutable and pinned, kernel can read them safely
-    let write_e = opcode::Write::new(types::Fd(conn.fd), response.ptr, response.len as u32)
-        .build()
-        .user_data(OpType::Write(conn_id).encode());
+    // Use WriteFixed to tell kernel: "write registered buffer #N to this socket"
+    // This is TRUE zero-copy - kernel reads directly from our pinned buffer
+    let write_e = opcode::WriteFixed::new(
+        types::Fd(conn.fd),
+        response.ptr as *const u8,
+        response.len as u32,
+        response.buffer_id,
+    )
+    .build()
+    .user_data(OpType::Write(conn_id).encode());
 
     unsafe {
         ring.submission()
