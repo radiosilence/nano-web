@@ -29,6 +29,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 axum = { version = "0.8", features = ["tokio", "tracing"] }
 hyper = { version = "1.6", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
+http-body-util = "0.1"
 tower = { version = "0.5", features = ["timeout"] }
 tower-http = { version = "0.6", features = [
     "fs",
