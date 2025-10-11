@@ -2,14 +2,13 @@
 // Zero-copy serving with registered buffers
 
 use anyhow::{Context, Result};
-use bytes::Bytes;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_uring::net::TcpListener;
 use tracing::{debug, info, warn};
 
+use crate::compression::CompressedContent;
 use crate::http::{build_response, parse_request};
 use crate::routes::NanoWeb;
 
@@ -27,15 +26,10 @@ pub fn serve(config: UringServeConfig) -> Result<()> {
     info!("Pre-loading files from {:?}", config.public_dir);
 
     // Pre-load all files into memory
-    let nano_web = Arc::new(
-        NanoWeb::new(
-            config.public_dir.clone(),
-            config.dev,
-            config.spa_mode,
-            &config.config_prefix,
-        )
-        .context("Failed to initialize NanoWeb")?,
-    );
+    let nano_web = Arc::new(NanoWeb::new());
+    nano_web
+        .populate_routes(&config.public_dir, &config.config_prefix)
+        .context("Failed to populate routes")?;
 
     info!("Routes loaded: {}", nano_web.routes.len());
 
@@ -130,7 +124,7 @@ async fn handle_connection(
         let response = match nano_web.routes.get(path) {
             Some(entry) => {
                 // Found the file
-                build_file_response(&entry.value().content, &entry.value().content_type)
+                build_file_response(&entry.value().content, &entry.value().headers.content_type)
             }
             None => {
                 // Try index.html for directories
@@ -139,18 +133,20 @@ async fn handle_connection(
                 } else {
                     format!("{}/index.html", path)
                 };
+                let index_path_str = index_path.as_str();
 
-                match nano_web.routes.get(&index_path) {
-                    Some(entry) => {
-                        build_file_response(&entry.value().content, &entry.value().content_type)
-                    }
+                match nano_web.routes.get(index_path_str) {
+                    Some(entry) => build_file_response(
+                        &entry.value().content,
+                        &entry.value().headers.content_type,
+                    ),
                     None => {
                         // SPA mode fallback
                         if spa_mode {
                             match nano_web.routes.get("/index.html") {
                                 Some(entry) => build_file_response(
                                     &entry.value().content,
-                                    &entry.value().content_type,
+                                    &entry.value().headers.content_type,
                                 ),
                                 None => build_response(404, &[], b"Not Found"),
                             }
@@ -174,23 +170,27 @@ async fn handle_connection(
 }
 
 /// Build HTTP response for a file
-fn build_file_response(content: &Bytes, content_type: &str) -> Vec<u8> {
+fn build_file_response(content: &Arc<CompressedContent>, content_type: &Arc<str>) -> Vec<u8> {
+    // Use the uncompressed content for now (io_uring with registered buffers would use this)
+    let body = &content.original;
+
     let headers = [
-        ("Content-Type", content_type),
+        ("Content-Type", content_type.as_ref()),
         ("Cache-Control", "public, max-age=3600"),
         ("Server", "nano-web-uring"),
     ];
 
-    build_response(200, &headers, content)
+    build_response(200, &headers, body)
 }
 
 /// Write all data to stream
 async fn write_all(stream: &tokio_uring::net::TcpStream, data: &[u8]) -> Result<()> {
     let mut written = 0;
-    let buf = data.to_vec();
+    let mut buf = data.to_vec();
 
     while written < data.len() {
-        let (result, nbuf) = stream.write(buf).await;
+        let slice = buf[written..].to_vec();
+        let (result, _) = stream.write(slice).submit().await;
         let n = result.context("Write failed")?;
         if n == 0 {
             anyhow::bail!("Connection closed while writing");
