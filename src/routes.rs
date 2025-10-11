@@ -1,5 +1,6 @@
 use crate::compression::CompressedContent;
 use crate::mime_types::{get_cache_control, get_mime_config};
+use crate::response_buffer::{Encoding, ResponseBuffer};
 use crate::template::render_template;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -73,6 +74,13 @@ pub struct NanoWeb {
     // memory mapping stays valid as long as any thread holds a reference.
     // Multiple requests for the same large file can serve from the same mapped memory.
     pub static_cache: DashMap<Arc<str>, Arc<Mmap>, FxBuildHasher>,
+
+    // ULTRA MODE: Pre-baked complete HTTP responses
+    // Key: (String, encoding) -> Value: complete HTTP response buffer
+    // This is the lookup table - O(1) from request to complete response
+    // Each buffer contains: "HTTP/1.1 200 OK\r\n...headers...\r\n\r\n[body]"
+    // Using String instead of Arc<str> for keys because we need owned comparison
+    pub ultra_cache: DashMap<(String, Encoding), ResponseBuffer, FxBuildHasher>,
 }
 
 impl Default for NanoWeb {
@@ -86,7 +94,17 @@ impl NanoWeb {
         Self {
             routes: DashMap::with_hasher(FxBuildHasher::default()),
             static_cache: DashMap::with_hasher(FxBuildHasher::default()),
+            ultra_cache: DashMap::with_hasher(FxBuildHasher::default()),
         }
+    }
+
+    /// Ultra-fast O(1) lookup - returns pre-baked complete HTTP response
+    #[inline(always)]
+    pub fn get_ultra(&self, path: &str, accept_encoding: &str) -> Option<ResponseBuffer> {
+        let encoding = Encoding::from_accept_encoding(accept_encoding);
+        self.ultra_cache
+            .get(&(path.to_string(), encoding))
+            .map(|entry| entry.value().clone())
     }
 
     pub fn populate_routes(&self, public_dir: &Path, config_prefix: &str) -> Result<()> {
@@ -131,14 +149,33 @@ impl NanoWeb {
         for (url_path, route) in routes {
             // Handle index files first - create the directory route
             if url_path.ends_with("/index.html") {
-                let dir_path = if url_path.as_ref() == "/index.html" {
+                let dir_path: Arc<str> = if url_path.as_ref() == "/index.html" {
                     Arc::from("/")
                 } else {
                     let dir = url_path.trim_end_matches("/index.html");
-                    Arc::from(format!("{}/", dir))
+                    Arc::from(format!("{}/", dir).as_str())
                 };
                 // Clone for the directory route (e.g., "/about/" -> route)
-                self.routes.insert(dir_path, route.clone());
+                self.routes.insert(dir_path.clone(), route.clone());
+
+                // ULTRA MODE: Clone all ultra_cache entries for directory path
+                // Copy all pre-baked responses from /about/index.html to /about/
+                for encoding in [
+                    Encoding::Identity,
+                    Encoding::Gzip,
+                    Encoding::Brotli,
+                    Encoding::Zstd,
+                ] {
+                    if let Some(response) = self
+                        .ultra_cache
+                        .get(&(url_path.as_ref().to_string(), encoding))
+                    {
+                        self.ultra_cache.insert(
+                            (dir_path.as_ref().to_string(), encoding),
+                            response.value().clone(),
+                        );
+                    }
+                }
             }
 
             // Insert the main route, moving ownership (no clone needed)
@@ -210,10 +247,74 @@ impl NanoWeb {
             content: Arc::new(compressed),
             path: Arc::new(file_path.to_path_buf()),
             modified,
-            headers,
+            headers: headers.clone(),
         };
 
         let url_path = self.file_path_to_url(file_path, public_dir)?;
+
+        // ULTRA MODE: Pre-bake complete HTTP responses for all encodings
+        // Build complete response buffer for each available encoding
+        let content_type = headers.content_type.as_ref();
+        let etag_str = headers.etag.as_ref();
+        let last_modified_str = headers.last_modified.as_ref();
+        let cache_control = headers.cache_control.as_ref();
+
+        // Identity (uncompressed)
+        let identity_buf = ResponseBuffer::build(
+            content_type,
+            Encoding::Identity,
+            etag_str,
+            last_modified_str,
+            cache_control,
+            &route.content.plain,
+        );
+        self.ultra_cache.insert(
+            (url_path.as_ref().to_string(), Encoding::Identity),
+            identity_buf,
+        );
+
+        // Gzip
+        if let Some(gzip_data) = &route.content.gzip {
+            let gzip_buf = ResponseBuffer::build(
+                content_type,
+                Encoding::Gzip,
+                etag_str,
+                last_modified_str,
+                cache_control,
+                gzip_data,
+            );
+            self.ultra_cache
+                .insert((url_path.as_ref().to_string(), Encoding::Gzip), gzip_buf);
+        }
+
+        // Brotli
+        if let Some(br_data) = &route.content.brotli {
+            let br_buf = ResponseBuffer::build(
+                content_type,
+                Encoding::Brotli,
+                etag_str,
+                last_modified_str,
+                cache_control,
+                br_data,
+            );
+            self.ultra_cache
+                .insert((url_path.as_ref().to_string(), Encoding::Brotli), br_buf);
+        }
+
+        // Zstd
+        if let Some(zstd_data) = &route.content.zstd {
+            let zstd_buf = ResponseBuffer::build(
+                content_type,
+                Encoding::Zstd,
+                etag_str,
+                last_modified_str,
+                cache_control,
+                zstd_data,
+            );
+            self.ultra_cache
+                .insert((url_path.as_ref().to_string(), Encoding::Zstd), zstd_buf);
+        }
+
         Ok((url_path, route))
     }
 

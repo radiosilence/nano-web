@@ -48,6 +48,10 @@ pub struct Cli {
     #[arg(long = "log-requests")]
     #[arg(help = "Log HTTP requests")]
     pub log_requests: bool,
+
+    #[arg(long = "ultra")]
+    #[arg(help = "ULTRA MODE: Use raw hyper with pre-baked response buffers")]
+    pub ultra: bool,
 }
 
 #[derive(Subcommand)]
@@ -84,6 +88,10 @@ pub enum Commands {
         #[arg(long = "log-requests")]
         #[arg(help = "Log HTTP requests")]
         log_requests: bool,
+
+        #[arg(long = "ultra")]
+        #[arg(help = "ULTRA MODE: Use raw hyper with pre-baked response buffers")]
+        ultra: bool,
     },
     #[command(about = "Show version information")]
     Version,
@@ -111,6 +119,7 @@ impl Cli {
                 log_level,
                 log_format,
                 log_requests,
+                ultra,
             }) => {
                 let public_dir = self.dir.clone();
                 let serve_dir = directory.clone().unwrap_or(public_dir);
@@ -129,6 +138,7 @@ impl Cli {
                     spa_mode: spa || self.spa,
                     config_prefix: config_prefix.unwrap_or(self.config_prefix),
                     log_requests: log_requests || self.log_requests,
+                    ultra: ultra || self.ultra,
                 };
 
                 final_config.serve().await
@@ -160,20 +170,32 @@ struct FinalServeConfig {
     spa_mode: bool,
     config_prefix: String,
     log_requests: bool,
+    ultra: bool,
 }
 
 impl FinalServeConfig {
     async fn serve(self) -> Result<()> {
-        // Use Axum with our compression and caching system
-        let config = crate::server::AxumServeConfig {
-            public_dir: self.public_dir,
-            port: self.port,
-            dev: self.dev,
-            spa_mode: self.spa_mode,
-            config_prefix: self.config_prefix,
-            log_requests: self.log_requests,
-        };
-        crate::server::start_axum_server(config).await
+        if self.ultra {
+            // ULTRA MODE: Raw hyper with pre-baked response buffers
+            let config = crate::ultra_server::UltraServeConfig {
+                public_dir: self.public_dir,
+                port: self.port,
+                spa_mode: self.spa_mode,
+                config_prefix: self.config_prefix,
+            };
+            crate::ultra_server::start_ultra_server(config).await
+        } else {
+            // Normal mode: Axum with compression and caching
+            let config = crate::server::AxumServeConfig {
+                public_dir: self.public_dir,
+                port: self.port,
+                dev: self.dev,
+                spa_mode: self.spa_mode,
+                config_prefix: self.config_prefix,
+                log_requests: self.log_requests,
+            };
+            crate::server::start_axum_server(config).await
+        }
     }
 }
 
