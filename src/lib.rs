@@ -7,6 +7,9 @@ pub mod routes;
 pub mod server;
 pub mod template;
 
+#[cfg(target_os = "linux")]
+pub mod ebpf_server;
+
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn init_logging(level: &str, format: &str) {

@@ -50,20 +50,33 @@ struct AppState {
 // async fn - Returns a Future that implements the async state machine
 // Result<()> - Returns () on success, anyhow::Error on failure
 pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
-    // Arc::new allocates NanoWeb on the heap and wraps in atomic reference counter
-    // Needed because multiple concurrent request handlers will access the same cache
     let server = Arc::new(NanoWeb::new());
-
-    // Populate routes using our existing route system
-    // &config.public_dir - borrowing because populate_routes doesn't need ownership
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
 
     let state = AppState {
-        server,                 // Arc<NanoWeb> moved into state
-        config: config.clone(), // Clone needed because we use config again below (line 65)
+        server: server.clone(),
+        config: config.clone(),
     };
 
     info!("Routes loaded: {}", state.server.routes.len());
+
+    // Try to start eBPF/XDP if on Linux
+    #[cfg(target_os = "linux")]
+    let _ebpf_handle = {
+        match crate::ebpf_server::try_start_ebpf(&server, "lo").await {
+            Ok(handle) => {
+                info!("🚀 eBPF/XDP: Kernel-space HTTP acceleration enabled");
+                info!("   Simple GETs will be served directly from kernel");
+                info!("   Complex requests fall back to userspace");
+                Some(handle)
+            }
+            Err(e) => {
+                warn!("eBPF unavailable: {}", e);
+                warn!("Running in userspace-only mode (still fast!)");
+                None
+            }
+        }
+    };
 
     let app = create_router(state);
 

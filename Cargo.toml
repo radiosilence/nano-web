@@ -57,6 +57,15 @@ memmap2 = "0.9"
 rayon = "1.10"
 urlencoding = "2.1"
 
+# eBPF support (Linux only, optional)
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { version = "0.12", optional = true }
+aya-log = { version = "0.2", optional = true }
+
+[features]
+default = []
+ebpf = ["aya", "aya-log"]
+
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc = "0.1.43"
 
