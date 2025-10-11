@@ -252,21 +252,20 @@ impl NanoWeb {
 
         let url_path = self.file_path_to_url(file_path, public_dir)?;
 
-        // ULTRA MODE: Pre-bake complete HTTP responses for all encodings
-        // Build complete response buffer for each available encoding
-        let content_type = headers.content_type.as_ref();
-        let etag_str = headers.etag.as_ref();
-        let last_modified_str = headers.last_modified.as_ref();
-        let cache_control = headers.cache_control.as_ref();
+        // ULTRA MODE: Pre-bake response buffers (body + metadata) for all encodings
+        let content_type = headers.content_type.clone();
+        let etag_str = headers.etag.clone();
+        let last_modified_str = headers.last_modified.clone();
+        let cache_control = headers.cache_control.clone();
 
         // Identity (uncompressed)
-        let identity_buf = ResponseBuffer::build(
-            content_type,
-            Encoding::Identity,
-            etag_str,
-            last_modified_str,
-            cache_control,
-            &route.content.plain,
+        let identity_buf = ResponseBuffer::new(
+            route.content.plain.to_vec(),
+            content_type.clone(),
+            Encoding::Identity.header_value(),
+            etag_str.clone(),
+            last_modified_str.clone(),
+            cache_control.clone(),
         );
         self.ultra_cache.insert(
             (url_path.as_ref().to_string(), Encoding::Identity),
@@ -275,13 +274,13 @@ impl NanoWeb {
 
         // Gzip
         if let Some(gzip_data) = &route.content.gzip {
-            let gzip_buf = ResponseBuffer::build(
-                content_type,
-                Encoding::Gzip,
-                etag_str,
-                last_modified_str,
-                cache_control,
-                gzip_data,
+            let gzip_buf = ResponseBuffer::new(
+                gzip_data.to_vec(),
+                content_type.clone(),
+                Encoding::Gzip.header_value(),
+                etag_str.clone(),
+                last_modified_str.clone(),
+                cache_control.clone(),
             );
             self.ultra_cache
                 .insert((url_path.as_ref().to_string(), Encoding::Gzip), gzip_buf);
@@ -289,13 +288,13 @@ impl NanoWeb {
 
         // Brotli
         if let Some(br_data) = &route.content.brotli {
-            let br_buf = ResponseBuffer::build(
-                content_type,
-                Encoding::Brotli,
-                etag_str,
-                last_modified_str,
-                cache_control,
-                br_data,
+            let br_buf = ResponseBuffer::new(
+                br_data.to_vec(),
+                content_type.clone(),
+                Encoding::Brotli.header_value(),
+                etag_str.clone(),
+                last_modified_str.clone(),
+                cache_control.clone(),
             );
             self.ultra_cache
                 .insert((url_path.as_ref().to_string(), Encoding::Brotli), br_buf);
@@ -303,13 +302,13 @@ impl NanoWeb {
 
         // Zstd
         if let Some(zstd_data) = &route.content.zstd {
-            let zstd_buf = ResponseBuffer::build(
-                content_type,
-                Encoding::Zstd,
-                etag_str,
-                last_modified_str,
-                cache_control,
-                zstd_data,
+            let zstd_buf = ResponseBuffer::new(
+                zstd_data.to_vec(),
+                content_type.clone(),
+                Encoding::Zstd.header_value(),
+                etag_str.clone(),
+                last_modified_str.clone(),
+                cache_control.clone(),
             );
             self.ultra_cache
                 .insert((url_path.as_ref().to_string(), Encoding::Zstd), zstd_buf);

@@ -6,7 +6,6 @@ pub mod response_buffer;
 pub mod routes;
 pub mod server;
 pub mod template;
-pub mod ultra_server;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

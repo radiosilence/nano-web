@@ -30,11 +30,11 @@ use crate::routes::NanoWeb;
 // We need Clone because Axum requires state to be cloneable (shared across request handlers)
 #[derive(Clone)]
 pub struct AxumServeConfig {
-    pub public_dir: PathBuf, // Owned path - could be moved between threads
-    pub port: u16,           // u16 is Copy (stack allocated) - clone just copies the bits
-    pub dev: bool,           // bool is Copy - no heap allocation to worry about
+    pub public_dir: PathBuf,
+    pub port: u16,
+    pub dev: bool,
     pub spa_mode: bool,
-    pub config_prefix: String, // String owns heap-allocated data - clone() allocates new string
+    pub config_prefix: String,
     pub log_requests: bool,
 }
 
@@ -110,11 +110,8 @@ fn create_router(state: AppState) -> Router {
 
     // Router::new() creates empty router, then we build it with method chaining
     let app = Router::new()
-        // .route() maps HTTP path patterns to handler functions
-        // get() means only handle GET requests to this path
-        .route("/_health", get(health_handler)) // health_handler is a function pointer
-        .route("/", get(root_handler)) // Explicit route for root
-        .fallback(get(file_handler)); // Catch-all for everything else
+        .route("/_health", get(health_handler))
+        .fallback(get(file_handler));
 
     // Conditional middleware - only add tracing if log_requests is true
     if state.config.log_requests {
@@ -174,136 +171,75 @@ async fn health_handler() -> impl IntoResponse {
 // Axum handler function - parameters are "extractors" that Axum provides
 // headers: HeaderMap - Axum extracts request headers automatically
 // State(state): State<AppState> - Pattern matching to extract our injected state
-async fn root_handler(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
-    // Delegate to serve_file with root path
-    // .await because serve_file is async and we need its result
-    serve_file("/".to_string(), headers, state).await
-}
-
 async fn file_handler(
-    uri: Uri, // Uri extractor - Axum parses the request URI
+    uri: Uri,
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    // Extract path from URI and convert to owned String
-    // .to_string() because serve_file needs owned data (not borrowed &str)
-    let path = uri.path().to_string();
+    let path = uri.path();
     serve_file(path, headers, state).await
 }
 
-async fn serve_file(
-    path: String, // Owned string - can be moved around without lifetime issues
-    request_headers: HeaderMap,
-    state: AppState, // AppState by value - cloned by Axum for each request
-) -> impl IntoResponse {
+async fn serve_file(path: &str, request_headers: HeaderMap, state: AppState) -> impl IntoResponse {
     debug!("Serving path: {}", path);
 
     // Security: validate path to prevent directory traversal attacks
-    // if let Err(e) - pattern matching on Result, only execute if validation failed
-    if let Err(e) = crate::path::validate_request_path(&path) {
+    if let Err(e) = crate::path::validate_request_path(path) {
         tracing::warn!("Path validation failed for '{}': {}", path, e);
-        // Early return with error response - into_response() converts tuple to Response
-        return (StatusCode::BAD_REQUEST, "Bad Request").into_response();
+        let buf = crate::response_buffer::ResponseBuffer::bad_request();
+        return build_response(&buf);
     }
 
-    // Route lookup using our existing system
-    // mut because we might reassign it in the fallback logic below
-    let mut route = state.server.get_route(&path);
+    // Extract Accept-Encoding
+    let accept_encoding = request_headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
 
-    // Fallback 1: Try with trailing slash (common web server behavior)
-    if route.is_none() && !path.ends_with('/') {
-        // format! creates new owned String - needed because get_route expects &str
+    // O(1) lookup in pre-baked response cache
+    let mut response_buf = state.server.get_ultra(path, accept_encoding);
+
+    // Fallback 1: Try with trailing slash
+    if response_buf.is_none() && !path.ends_with('/') {
         let path_with_slash = format!("{}/", path);
-        route = state.server.get_route(&path_with_slash);
+        response_buf = state.server.get_ultra(&path_with_slash, accept_encoding);
     }
 
-    // Fallback 2: SPA mode - serve index.html for any unmatched routes
-    if route.is_none() && state.config.spa_mode {
-        // Single Page App fallback - serve root for all unmatched routes
-        route = state.server.get_route("/");
-        if route.is_some() {
-            debug!("SPA fallback for: {}", path);
-        }
+    // Fallback 2: SPA mode
+    if response_buf.is_none() && state.config.spa_mode {
+        debug!("SPA fallback for: {}", path);
+        response_buf = state.server.get_ultra("/", accept_encoding);
     }
 
-    // Pattern match on Option<CachedRoute> - extract route or return 404
-    // This converts Option<CachedRoute> to CachedRoute or early returns
-    let route = match route {
-        Some(r) => r, // Extract the CachedRoute from Some(route)
+    match response_buf {
+        Some(buf) => build_response(&buf),
         None => {
             debug!("Route not found: {}", path);
-            // Early return - convert tuple to HTTP response and exit function
-            return (StatusCode::NOT_FOUND, "Not Found").into_response();
+            let buf = crate::response_buffer::ResponseBuffer::not_found();
+            build_response(&buf)
         }
-    };
+    }
+}
 
-    // Dev mode file refresh - check if file changed on disk and reload if needed
-    // Variable shadowing: creating new `route` variable that shadows the previous one
-    let route = if state.config.dev {
-        // refresh_if_modified returns Result<Option<CachedRoute>, Error>
-        match state
-            .server
-            .refresh_if_modified(&path, &state.config.config_prefix)
-        {
-            Ok(Some(updated_route)) => {
-                debug!("Route refreshed: {}", path);
-                updated_route // Use the newly loaded route
-            }
-            Ok(None) => route, // File unchanged, use existing route
-            Err(e) => {
-                debug!("Failed to refresh route {}: {}", path, e);
-                route // Error refreshing, fallback to existing route
-            }
-        }
-    } else {
-        route // Production mode - always use cached route
-    };
-
-    // Extract Accept-Encoding from request headers for our compression system
-    // Method chaining with Option combinators - common Rust pattern
-    let accept_encoding = request_headers
-        .get(header::ACCEPT_ENCODING) // Option<&HeaderValue>
-        .and_then(|h| h.to_str().ok()) // Option<&str> - convert HeaderValue to str
-        .unwrap_or(""); // &str - default to empty string if None
-
-    // Use our compression system with pre-computed compressed files
-    // Destructuring assignment - get_best_encoding returns a tuple (String, &[u8])
-    let (encoding, content) = route.content.get_best_encoding(accept_encoding);
-
-    // Build response with optimized headers
-    // HeaderMap::new() creates empty header map - mut because we'll modify it
-    let mut response_headers = HeaderMap::new();
-
-    // Insert headers from our cached route
-    // .parse() converts Arc<str> to HeaderValue, .unwrap() safe because we control the values
-    response_headers.insert(
+fn build_response(buf: &crate::response_buffer::ResponseBuffer) -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    headers.insert(
         header::CONTENT_TYPE,
-        route.headers.content_type.parse().unwrap(), // "text/html", "application/json", etc
+        buf.content_type.as_ref().parse().unwrap(),
     );
-    response_headers.insert(
+    headers.insert(header::ETAG, buf.etag.as_ref().parse().unwrap());
+    headers.insert(
         header::LAST_MODIFIED,
-        route.headers.last_modified.parse().unwrap(), // "Wed, 15 Nov 2023 08:12:31 GMT"
+        buf.last_modified.as_ref().parse().unwrap(),
     );
-    response_headers.insert(header::ETAG, route.headers.etag.parse().unwrap()); // "abc123-456"
-    response_headers.insert(
+    headers.insert(
         header::CACHE_CONTROL,
-        route.headers.cache_control.parse().unwrap(), // "public, max-age=31536000"
+        buf.cache_control.as_ref().parse().unwrap(),
     );
 
-    // Add compression encoding header if content is compressed
-    // "identity" means uncompressed - only add header for gzip, br, etc
-    if encoding != "identity" {
-        response_headers.insert(header::CONTENT_ENCODING, encoding.parse().unwrap());
+    if let Some(encoding) = buf.content_encoding {
+        headers.insert(header::CONTENT_ENCODING, encoding.parse().unwrap());
     }
 
-    debug!(
-        "Serving {} bytes with encoding: {} (from pre-compressed cache)",
-        content.len(), // &[u8] has .len() method
-        encoding
-    );
-
-    // Final response tuple: (StatusCode, HeaderMap, Body)
-    // content.clone() - cloning &[u8] is cheap, just copies the slice reference
-    // Arc<Vec<u8>> inside CompressedContent makes the actual data sharing cheap
-    (StatusCode::OK, response_headers, content.clone()).into_response()
+    (StatusCode::OK, headers, buf.body.clone()).into_response()
 }

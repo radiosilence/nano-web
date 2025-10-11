@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use std::sync::Arc;
 
 /// Encoding for lookup key
@@ -34,142 +35,63 @@ impl Encoding {
     }
 }
 
-/// Pre-baked HTTP response - complete buffer ready to blast onto socket
+/// Pre-baked response buffer: body + metadata for hyper
+/// The body is pre-compressed, headers are pre-computed strings
+/// Hyper serializes headers, we provide zero-allocation body via Bytes
 #[derive(Debug, Clone)]
 pub struct ResponseBuffer {
-    /// Complete HTTP response: status line + headers + \r\n\r\n + body
-    /// This is literally what goes on the wire, no further processing
-    pub buffer: Arc<Vec<u8>>,
+    /// Pre-compressed body (Bytes wraps Arc<Vec<u8>> - zero copy on clone)
+    pub body: Bytes,
+
+    /// Pre-computed header values
+    pub content_type: Arc<str>,
+    pub content_encoding: Option<&'static str>,
+    pub etag: Arc<str>,
+    pub last_modified: Arc<str>,
+    pub cache_control: Arc<str>,
 }
 
 impl ResponseBuffer {
-    /// Build complete HTTP response from file metadata and compressed body
-    pub fn build(
-        content_type: &str,
-        encoding: Encoding,
-        etag: &str,
-        last_modified: &str,
-        cache_control: &str,
-        body: &[u8],
+    /// Create response buffer from pre-compressed body and metadata
+    pub fn new(
+        body: Vec<u8>,
+        content_type: Arc<str>,
+        content_encoding: Option<&'static str>,
+        etag: Arc<str>,
+        last_modified: Arc<str>,
+        cache_control: Arc<str>,
     ) -> Self {
-        let mut buf = Vec::with_capacity(512 + body.len());
-
-        // Status line
-        buf.extend_from_slice(b"HTTP/1.1 200 OK\r\n");
-
-        // Headers
-        buf.extend_from_slice(b"Content-Type: ");
-        buf.extend_from_slice(content_type.as_bytes());
-        buf.extend_from_slice(b"\r\n");
-
-        if let Some(enc) = encoding.header_value() {
-            buf.extend_from_slice(b"Content-Encoding: ");
-            buf.extend_from_slice(enc.as_bytes());
-            buf.extend_from_slice(b"\r\n");
-        }
-
-        buf.extend_from_slice(b"Content-Length: ");
-        buf.extend_from_slice(body.len().to_string().as_bytes());
-        buf.extend_from_slice(b"\r\n");
-
-        buf.extend_from_slice(b"ETag: ");
-        buf.extend_from_slice(etag.as_bytes());
-        buf.extend_from_slice(b"\r\n");
-
-        buf.extend_from_slice(b"Last-Modified: ");
-        buf.extend_from_slice(last_modified.as_bytes());
-        buf.extend_from_slice(b"\r\n");
-
-        buf.extend_from_slice(b"Cache-Control: ");
-        buf.extend_from_slice(cache_control.as_bytes());
-        buf.extend_from_slice(b"\r\n");
-
-        // Security headers
-        buf.extend_from_slice(b"X-Content-Type-Options: nosniff\r\n");
-        buf.extend_from_slice(b"X-Frame-Options: SAMEORIGIN\r\n");
-        buf.extend_from_slice(b"Referrer-Policy: strict-origin-when-cross-origin\r\n");
-
-        // End of headers
-        buf.extend_from_slice(b"\r\n");
-
-        // Body
-        buf.extend_from_slice(body);
-
         Self {
-            buffer: Arc::new(buf),
+            body: Bytes::from(body),
+            content_type,
+            content_encoding,
+            etag,
+            last_modified,
+            cache_control,
         }
     }
 
-    /// Build a complete HTTP/1.1 response buffer from scratch (legacy)
-    pub fn new(status_code: u16, status_text: &str, headers: &[(&str, &str)], body: &[u8]) -> Self {
-        // Pre-allocate: status line ~15 bytes + headers ~200 bytes + body
-        let mut buffer = Vec::with_capacity(256 + body.len());
-
-        // Status line
-        buffer.extend_from_slice(b"HTTP/1.1 ");
-        buffer.extend_from_slice(status_code.to_string().as_bytes());
-        buffer.extend_from_slice(b" ");
-        buffer.extend_from_slice(status_text.as_bytes());
-        buffer.extend_from_slice(b"\r\n");
-
-        // Headers
-        for (key, value) in headers {
-            buffer.extend_from_slice(key.as_bytes());
-            buffer.extend_from_slice(b": ");
-            buffer.extend_from_slice(value.as_bytes());
-            buffer.extend_from_slice(b"\r\n");
-        }
-
-        // Blank line separating headers from body
-        buffer.extend_from_slice(b"\r\n");
-
-        // Body
-        buffer.extend_from_slice(body);
-
-        Self {
-            buffer: Arc::new(buffer),
-        }
-    }
-
-    /// Build 404 response
+    /// Static 404 response
     pub fn not_found() -> Self {
         Self::new(
-            404,
-            "Not Found",
-            &[
-                ("Content-Type", "text/plain"),
-                ("Content-Length", "9"),
-                ("Cache-Control", "no-cache"),
-            ],
-            b"Not Found",
+            b"Not Found".to_vec(),
+            Arc::from("text/plain"),
+            None,
+            Arc::from("\"404\""),
+            Arc::from("Mon, 01 Jan 2024 00:00:00 GMT"),
+            Arc::from("no-cache"),
         )
     }
 
-    /// Build 400 response
+    /// Static 400 response
     pub fn bad_request() -> Self {
         Self::new(
-            400,
-            "Bad Request",
-            &[
-                ("Content-Type", "text/plain"),
-                ("Content-Length", "11"),
-                ("Cache-Control", "no-cache"),
-            ],
-            b"Bad Request",
-        )
-    }
-
-    /// Build 500 response
-    pub fn internal_error() -> Self {
-        Self::new(
-            500,
-            "Internal Server Error",
-            &[
-                ("Content-Type", "text/plain"),
-                ("Content-Length", "21"),
-                ("Cache-Control", "no-cache"),
-            ],
-            b"Internal Server Error",
+            b"Bad Request".to_vec(),
+            Arc::from("text/plain"),
+            None,
+            Arc::from("\"400\""),
+            Arc::from("Mon, 01 Jan 2024 00:00:00 GMT"),
+            Arc::from("no-cache"),
         )
     }
 }

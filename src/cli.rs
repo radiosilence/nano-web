@@ -48,10 +48,6 @@ pub struct Cli {
     #[arg(long = "log-requests")]
     #[arg(help = "Log HTTP requests")]
     pub log_requests: bool,
-
-    #[arg(long = "ultra")]
-    #[arg(help = "ULTRA MODE: Use raw hyper with pre-baked response buffers")]
-    pub ultra: bool,
 }
 
 #[derive(Subcommand)]
@@ -88,10 +84,6 @@ pub enum Commands {
         #[arg(long = "log-requests")]
         #[arg(help = "Log HTTP requests")]
         log_requests: bool,
-
-        #[arg(long = "ultra")]
-        #[arg(help = "ULTRA MODE: Use raw hyper with pre-baked response buffers")]
-        ultra: bool,
     },
     #[command(about = "Show version information")]
     Version,
@@ -119,7 +111,6 @@ impl Cli {
                 log_level,
                 log_format,
                 log_requests,
-                ultra,
             }) => {
                 let public_dir = self.dir.clone();
                 let serve_dir = directory.clone().unwrap_or(public_dir);
@@ -138,7 +129,6 @@ impl Cli {
                     spa_mode: spa || self.spa,
                     config_prefix: config_prefix.unwrap_or(self.config_prefix),
                     log_requests: log_requests || self.log_requests,
-                    ultra: ultra || self.ultra,
                 };
 
                 final_config.serve().await
