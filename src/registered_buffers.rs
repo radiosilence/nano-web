@@ -1,19 +1,14 @@
 // Pre-built HTTP response buffer system
 // Builds complete HTTP responses (headers + body) at startup for fast serving
 //
-// NOTE: Called "registered buffers" but doesn't use io_uring's register_buffers API yet.
-// That would require raw io-uring crate and is mainly for file I/O, not network sends.
-// This still provides massive benefits:
-// - Zero overhead from building HTTP headers per-request
-// - One HashMap lookup instead of multiple operations
-// - Pre-compressed variants ready to go
+// Runtime is literally just: map[path][encoding]
+// All the logic happens at startup when we build every valid path/encoding combination
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bytes::Bytes;
 use dashmap::DashMap;
 use std::sync::Arc;
 
-use crate::compression::CompressedContent;
 use crate::http::build_response;
 use crate::routes::{CachedRoute, CachedRoutes};
 
@@ -44,6 +39,16 @@ impl Encoding {
             Encoding::Zstd => Some("zstd"),
         }
     }
+
+    /// All encoding types in priority order (best first)
+    pub fn all_priority() -> &'static [Encoding] {
+        &[
+            Encoding::Brotli,
+            Encoding::Zstd,
+            Encoding::Gzip,
+            Encoding::Plain,
+        ]
+    }
 }
 
 /// Key for looking up pre-built responses
@@ -58,12 +63,12 @@ pub struct ResponseKey {
 pub struct RegisteredResponse {
     /// Complete HTTP response (headers + body)
     pub data: Bytes,
-    /// Buffer ID for potential future io_uring registration
-    /// (Currently unused, but structured for future optimization)
+    /// Buffer ID for io_uring registration
     pub buffer_id: u16,
 }
 
 /// Manager for registered buffers
+/// Runtime is map[path][encoding] - all logic is startup
 pub struct RegisteredBufferManager {
     /// Map of (path, encoding) -> pre-built response
     responses: DashMap<ResponseKey, RegisteredResponse>,
@@ -73,6 +78,7 @@ pub struct RegisteredBufferManager {
 
 impl RegisteredBufferManager {
     /// Create and pre-build all HTTP responses
+    /// Generates every valid (path, encoding) combination at startup
     pub fn new(routes: &CachedRoutes) -> Result<Self> {
         let mut manager = Self {
             responses: DashMap::new(),
@@ -81,18 +87,13 @@ impl RegisteredBufferManager {
 
         let mut buffer_id: u16 = 0;
 
-        // Iterate through all cached routes
+        // Iterate through all cached routes and build all encoding variants
         for entry in routes.iter() {
             let path = entry.key().clone();
             let route = entry.value();
 
-            // Build response for each encoding variant
-            for encoding in [
-                Encoding::Plain,
-                Encoding::Brotli,
-                Encoding::Gzip,
-                Encoding::Zstd,
-            ] {
+            // Build response for each encoding variant that exists
+            for &encoding in Encoding::all_priority() {
                 if let Some(response_data) = Self::build_http_response(route, encoding) {
                     let data = Bytes::from(response_data);
 
@@ -146,7 +147,8 @@ impl RegisteredBufferManager {
     }
 
     /// Look up pre-built response by path and encoding
-    pub fn get_response(&self, path: &str, encoding: Encoding) -> Option<RegisteredResponse> {
+    /// This is the ONLY thing the runtime does: map[path][encoding]
+    pub fn get(&self, path: &str, encoding: Encoding) -> Option<RegisteredResponse> {
         let key = ResponseKey {
             path: Arc::from(path),
             encoding,
@@ -154,7 +156,7 @@ impl RegisteredBufferManager {
         self.responses.get(&key).map(|r| r.clone())
     }
 
-    /// Get all buffers (for potential future io_uring registration)
+    /// Get all buffers (for io_uring registration)
     pub fn buffers(&self) -> &[Bytes] {
         &self.buffers
     }
@@ -164,15 +166,14 @@ impl RegisteredBufferManager {
         self.buffers.len()
     }
 
-    /// Select best encoding based on Accept-Encoding header
-    pub fn select_encoding(&self, path: &str, accept_encoding: &str) -> Option<Encoding> {
-        // Try encodings in priority order: brotli > zstd > gzip > plain
-        for encoding in [
-            Encoding::Brotli,
-            Encoding::Zstd,
-            Encoding::Gzip,
-            Encoding::Plain,
-        ] {
+    /// Get best available encoding for a path based on client Accept-Encoding
+    /// Returns (path, encoding) for direct lookup
+    ///
+    /// Priority: br > zstd > gzip > plain
+    pub fn best_match(&self, path: &str, accept_encoding: &str) -> Option<(Arc<str>, Encoding)> {
+        let path_arc: Arc<str> = Arc::from(path);
+
+        for &encoding in Encoding::all_priority() {
             // Check if client accepts this encoding
             let accepts = match encoding {
                 Encoding::Plain => true,
@@ -181,15 +182,13 @@ impl RegisteredBufferManager {
                 Encoding::Zstd => accept_encoding.contains("zstd"),
             };
 
-            if accepts {
-                // Check if we have this variant
-                let key = ResponseKey {
-                    path: Arc::from(path),
+            if accepts
+                && self.responses.contains_key(&ResponseKey {
+                    path: path_arc.clone(),
                     encoding,
-                };
-                if self.responses.contains_key(&key) {
-                    return Some(encoding);
-                }
+                })
+            {
+                return Some((path_arc, encoding));
             }
         }
 

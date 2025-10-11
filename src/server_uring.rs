@@ -8,9 +8,8 @@ use std::sync::Arc;
 use tokio_uring::net::TcpListener;
 use tracing::{debug, info, warn};
 
-use crate::compression::CompressedContent;
-use crate::http::{build_response, build_response_with_body, parse_request};
-use crate::registered_buffers::{Encoding, RegisteredBufferManager};
+use crate::http::{build_response, parse_request};
+use crate::registered_buffers::RegisteredBufferManager;
 use crate::routes::NanoWeb;
 
 pub struct UringServeConfig {
@@ -157,7 +156,7 @@ async fn handle_connection(
             continue;
         }
 
-        let is_head = request.method == "HEAD";
+        let _is_head = request.method == "HEAD";
 
         // Get Accept-Encoding header
         let accept_encoding = request
@@ -167,49 +166,25 @@ async fn handle_connection(
             .map(|(_, v)| *v)
             .unwrap_or("");
 
-        // Look up route
         let path = request.path;
-        let response = match nano_web.routes.get(path) {
-            Some(entry) => {
-                // Found the file
-                build_file_response(
-                    &entry.value().content,
-                    &entry.value().headers.content_type,
-                    accept_encoding,
-                )
-            }
-            None => {
-                // Try index.html for directories
-                let index_path = if path.ends_with('/') {
-                    format!("{}index.html", path)
-                } else {
-                    format!("{}/index.html", path)
-                };
-                let index_path_str = index_path.as_str();
 
-                match nano_web.routes.get(index_path_str) {
-                    Some(entry) => build_file_response(
-                        &entry.value().content,
-                        &entry.value().headers.content_type,
-                        accept_encoding,
-                    ),
-                    None => {
-                        // SPA mode fallback
-                        if spa_mode {
-                            match nano_web.routes.get("/index.html") {
-                                Some(entry) => build_file_response(
-                                    &entry.value().content,
-                                    &entry.value().headers.content_type,
-                                    accept_encoding,
-                                ),
-                                None => build_response(404, &[], b"Not Found"),
-                            }
-                        } else {
-                            build_response(404, &[], b"Not Found")
-                        }
-                    }
-                }
+        // Runtime logic: map[path][encoding]
+        let response = if let Some((_, encoding)) = buffer_manager.best_match(path, accept_encoding)
+        {
+            buffer_manager.get(path, encoding).unwrap().data.to_vec()
+        } else if spa_mode {
+            // SPA fallback: if not found, serve /index.html
+            if let Some((_, encoding)) = buffer_manager.best_match("/index.html", accept_encoding) {
+                buffer_manager
+                    .get("/index.html", encoding)
+                    .unwrap()
+                    .data
+                    .to_vec()
+            } else {
+                build_response(404, &[], b"Not Found")
             }
+        } else {
+            build_response(404, &[], b"Not Found")
         };
 
         // Write response
@@ -223,49 +198,7 @@ async fn handle_connection(
     Ok(())
 }
 
-/// Build HTTP response for a file with compression support
-fn build_file_response(
-    content: &Arc<CompressedContent>,
-    content_type: &Arc<str>,
-    accept_encoding: &str,
-) -> Vec<u8> {
-    // Select best compression based on Accept-Encoding header
-    // Priority: brotli > zstd > gzip > plain
-    let (body, encoding) = if accept_encoding.contains("br") {
-        if let Some(ref brotli) = content.brotli {
-            (brotli, Some("br"))
-        } else {
-            (&content.plain, None)
-        }
-    } else if accept_encoding.contains("zstd") {
-        if let Some(ref zstd) = content.zstd {
-            (zstd, Some("zstd"))
-        } else {
-            (&content.plain, None)
-        }
-    } else if accept_encoding.contains("gzip") {
-        if let Some(ref gzip) = content.gzip {
-            (gzip, Some("gzip"))
-        } else {
-            (&content.plain, None)
-        }
-    } else {
-        (&content.plain, None)
-    };
-
-    let mut headers = vec![
-        ("Content-Type", content_type.as_ref()),
-        ("Cache-Control", "public, max-age=3600"),
-        ("Server", "nano-web-uring"),
-    ];
-
-    // Add Content-Encoding header if compressed
-    if let Some(enc) = encoding {
-        headers.push(("Content-Encoding", enc));
-    }
-
-    build_response(200, &headers, body)
-}
+// Note: build_file_response removed - we now use pre-built responses from RegisteredBufferManager
 
 /// Write all data to stream
 async fn write_all(stream: &tokio_uring::net::TcpStream, data: &[u8]) -> Result<()> {
