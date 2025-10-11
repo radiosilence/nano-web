@@ -160,32 +160,19 @@ struct FinalServeConfig {
     spa_mode: bool,
     config_prefix: String,
     log_requests: bool,
-    ultra: bool,
 }
 
 impl FinalServeConfig {
     async fn serve(self) -> Result<()> {
-        if self.ultra {
-            // ULTRA MODE: Raw hyper with pre-baked response buffers
-            let config = crate::ultra_server::UltraServeConfig {
-                public_dir: self.public_dir,
-                port: self.port,
-                spa_mode: self.spa_mode,
-                config_prefix: self.config_prefix,
-            };
-            crate::ultra_server::start_ultra_server(config).await
-        } else {
-            // Normal mode: Axum with compression and caching
-            let config = crate::server::AxumServeConfig {
-                public_dir: self.public_dir,
-                port: self.port,
-                dev: self.dev,
-                spa_mode: self.spa_mode,
-                config_prefix: self.config_prefix,
-                log_requests: self.log_requests,
-            };
-            crate::server::start_axum_server(config).await
-        }
+        let config = crate::server::AxumServeConfig {
+            public_dir: self.public_dir,
+            port: self.port,
+            dev: self.dev,
+            spa_mode: self.spa_mode,
+            config_prefix: self.config_prefix,
+            log_requests: self.log_requests,
+        };
+        crate::server::start_axum_server(config).await
     }
 }
 
