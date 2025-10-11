@@ -1672,6 +1672,8 @@ dependencies = [
  "futures",
  "fxhash",
  "hyper 1.7.0",
+ "io-uring 0.7.10",
+ "libc",
  "md5",
  "memmap2",
  "mimalloc",

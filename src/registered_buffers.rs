@@ -1,5 +1,12 @@
-// io_uring registered buffers for true zero-copy serving
-// Pre-builds complete HTTP responses and registers them with the kernel
+// Pre-built HTTP response buffer system
+// Builds complete HTTP responses (headers + body) at startup for fast serving
+//
+// NOTE: Called "registered buffers" but doesn't use io_uring's register_buffers API yet.
+// That would require raw io-uring crate and is mainly for file I/O, not network sends.
+// This still provides massive benefits:
+// - Zero overhead from building HTTP headers per-request
+// - One HashMap lookup instead of multiple operations
+// - Pre-compressed variants ready to go
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
@@ -46,12 +53,13 @@ pub struct ResponseKey {
     pub encoding: Encoding,
 }
 
-/// Pre-built HTTP response ready for zero-copy sending
+/// Pre-built HTTP response ready for fast sending
 #[derive(Debug, Clone)]
 pub struct RegisteredResponse {
     /// Complete HTTP response (headers + body)
     pub data: Bytes,
-    /// Buffer ID in io_uring (for IOSQE_FIXED_FILE)
+    /// Buffer ID for potential future io_uring registration
+    /// (Currently unused, but structured for future optimization)
     pub buffer_id: u16,
 }
 
@@ -146,12 +154,12 @@ impl RegisteredBufferManager {
         self.responses.get(&key).map(|r| r.clone())
     }
 
-    /// Get all buffers for io_uring registration
+    /// Get all buffers (for potential future io_uring registration)
     pub fn buffers(&self) -> &[Bytes] {
         &self.buffers
     }
 
-    /// Total number of registered buffers
+    /// Total number of pre-built response buffers
     pub fn buffer_count(&self) -> usize {
         self.buffers.len()
     }

@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::compression::CompressedContent;
 use crate::http::{build_response, build_response_with_body, parse_request};
+use crate::registered_buffers::{Encoding, RegisteredBufferManager};
 use crate::routes::NanoWeb;
 
 pub struct UringServeConfig {
@@ -33,8 +34,47 @@ pub fn serve(config: UringServeConfig) -> Result<()> {
 
     info!("Routes loaded: {}", nano_web.routes.len());
 
-    // Start io_uring runtime
-    tokio_uring::start(async move {
+    // Pre-build all HTTP responses
+    info!("Pre-building HTTP responses...");
+    let buffer_manager = Arc::new(
+        RegisteredBufferManager::new(&nano_web.routes).context("Failed to pre-build responses")?,
+    );
+    info!(
+        "Pre-built {} response variants",
+        buffer_manager.buffer_count()
+    );
+
+    // Create io_uring instance and register buffers with kernel
+    info!("Registering buffers with io_uring...");
+    let ring_builder = tokio_uring::uring_builder();
+    let ring = ring_builder
+        .build(256)
+        .context("Failed to build io_uring")?;
+
+    // Convert our Bytes buffers to iovec for registration
+    let iovecs: Vec<libc::iovec> = buffer_manager
+        .buffers()
+        .iter()
+        .map(|b| libc::iovec {
+            iov_base: b.as_ptr() as *mut libc::c_void,
+            iov_len: b.len(),
+        })
+        .collect();
+
+    // Register buffers with the kernel
+    unsafe {
+        ring.submitter()
+            .register_buffers(&iovecs)
+            .context("Failed to register buffers with io_uring")?;
+    }
+
+    info!("Registered {} fixed buffers with kernel", iovecs.len());
+
+    // Start io_uring runtime with our configured ring
+    let mut builder = tokio_uring::builder();
+    builder.uring_builder(&ring_builder);
+
+    builder.start(async move {
         let addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse().unwrap();
         let listener = TcpListener::bind(addr)
             .context("Failed to bind to address")
@@ -45,13 +85,13 @@ pub fn serve(config: UringServeConfig) -> Result<()> {
         loop {
             match listener.accept().await {
                 Ok((stream, peer_addr)) => {
-                    let nano_web = nano_web.clone();
+                    let buffer_manager = buffer_manager.clone();
                     let spa_mode = config.spa_mode;
 
                     // Spawn handler for this connection
                     tokio_uring::spawn(async move {
                         if let Err(e) =
-                            handle_connection(stream, nano_web, spa_mode, peer_addr).await
+                            handle_connection(stream, buffer_manager, spa_mode, peer_addr).await
                         {
                             warn!("Connection error from {}: {:?}", peer_addr, e);
                         }
@@ -62,15 +102,13 @@ pub fn serve(config: UringServeConfig) -> Result<()> {
                 }
             }
         }
-    });
-
-    Ok(())
+    })
 }
 
 /// Handle a single connection (HTTP/1.1 keep-alive supported)
 async fn handle_connection(
     stream: tokio_uring::net::TcpStream,
-    nano_web: Arc<NanoWeb>,
+    buffer_manager: Arc<RegisteredBufferManager>,
     spa_mode: bool,
     peer_addr: SocketAddr,
 ) -> Result<()> {
