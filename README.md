@@ -30,7 +30,11 @@ Transfer/sec:    870.24MB
 
 I know web-server benchmarks are mostly useless, however, this server does very little, and this is it's literal use case (serve file quick!).
 
-Based on trying other high-performance servers locally, I reckon nano-web would place in the top ten in the TechEmpower plaintext webserver benchmarks if ran on their hardware (haven't got around to submitting it yet). It beats out `may-minihttp`, for instance.
+### TechEmpower Benchmarks
+
+TechEmpower benchmark setup ready in `techempower/` directory. See [techempower/README.md](techempower/README.md) for submission details.
+
+The benchmark serves responses as actual pre-loaded files from memory (because why not?). Both plaintext and JSON tests work as expected.
 
 ## Features
 
