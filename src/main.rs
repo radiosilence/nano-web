@@ -6,12 +6,12 @@ use anyhow::Result;
 use clap::Parser;
 use nano_web::cli;
 
-// On Linux with io_uring, we don't use tokio's runtime
+// On Linux with io_uring, we use tokio_uring which has its own runtime
+// No #[tokio::main] needed - tokio_uring::builder().start() is blocking
+// but we still need to block_on the async cli.run() function
 #[cfg(target_os = "linux")]
 fn main() -> Result<()> {
     let cli = cli::Cli::parse();
-
-    // Run in blocking context since io_uring has its own runtime
     futures::executor::block_on(cli.run())
 }
 

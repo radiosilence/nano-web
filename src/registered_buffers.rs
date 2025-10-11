@@ -1,13 +1,14 @@
-// Pre-built HTTP response buffer system
-// Builds complete HTTP responses (headers + body) at startup for fast serving
+// Pre-built HTTP response buffer system with io_uring fixed buffers
+// Builds complete HTTP responses (headers + body) at startup and registers with kernel
 //
-// Runtime is literally just: map[path][encoding]
+// Runtime is literally just: map[path][encoding] → check_out(buffer_id) → write_fixed()
 // All the logic happens at startup when we build every valid path/encoding combination
 
 use anyhow::Result;
 use bytes::Bytes;
 use dashmap::DashMap;
 use std::sync::Arc;
+use tokio_uring::buf::fixed::FixedBufRegistry;
 
 use crate::http::build_response;
 use crate::routes::{CachedRoute, CachedRoutes};
@@ -67,24 +68,22 @@ pub struct RegisteredResponse {
     pub buffer_id: u16,
 }
 
-/// Manager for registered buffers
-/// Runtime is map[path][encoding] - all logic is startup
+/// Manager for registered buffers with io_uring FixedBufRegistry
+/// Runtime is map[path][encoding] → buffer_id → check_out() → write_fixed()
 pub struct RegisteredBufferManager {
-    /// Map of (path, encoding) -> pre-built response
-    responses: DashMap<ResponseKey, RegisteredResponse>,
-    /// All buffer data in order (for io_uring registration)
-    buffers: Vec<Bytes>,
+    /// Map of (path, encoding) -> buffer_id
+    responses: DashMap<ResponseKey, u16>,
+    /// io_uring fixed buffer registry (registered with kernel)
+    /// Vec<u8> is the buffer type we're registering
+    registry: Arc<FixedBufRegistry<Vec<u8>>>,
 }
 
 impl RegisteredBufferManager {
-    /// Create and pre-build all HTTP responses
+    /// Create and pre-build all HTTP responses, then register with io_uring
     /// Generates every valid (path, encoding) combination at startup
     pub fn new(routes: &CachedRoutes) -> Result<Self> {
-        let mut manager = Self {
-            responses: DashMap::new(),
-            buffers: Vec::new(),
-        };
-
+        let responses = DashMap::new();
+        let mut buffers: Vec<Vec<u8>> = Vec::new();
         let mut buffer_id: u16 = 0;
 
         // Iterate through all cached routes and build all encoding variants
@@ -95,28 +94,36 @@ impl RegisteredBufferManager {
             // Build response for each encoding variant that exists
             for &encoding in Encoding::all_priority() {
                 if let Some(response_data) = Self::build_http_response(route, encoding) {
-                    let data = Bytes::from(response_data);
-
-                    // Store in lookup map
-                    manager.responses.insert(
+                    // Store buffer_id in lookup map
+                    responses.insert(
                         ResponseKey {
                             path: path.clone(),
                             encoding,
                         },
-                        RegisteredResponse {
-                            data: data.clone(),
-                            buffer_id,
-                        },
+                        buffer_id,
                     );
 
-                    // Store in buffer list (in order for io_uring registration)
-                    manager.buffers.push(data);
+                    // Store buffer for registry
+                    buffers.push(response_data);
                     buffer_id += 1;
                 }
             }
         }
 
-        Ok(manager)
+        // Create FixedBufRegistry with all pre-built responses
+        let registry = FixedBufRegistry::new(buffers);
+
+        Ok(Self {
+            responses,
+            registry: Arc::new(registry),
+        })
+    }
+
+    /// Register buffers with io_uring kernel
+    /// Must be called from within tokio_uring runtime
+    pub fn register(&self) -> Result<()> {
+        self.registry.register()?;
+        Ok(())
     }
 
     /// Build a complete HTTP response for a file + encoding
@@ -146,24 +153,25 @@ impl RegisteredBufferManager {
         Some(build_response(200, &headers, body))
     }
 
-    /// Look up pre-built response by path and encoding
-    /// This is the ONLY thing the runtime does: map[path][encoding]
-    pub fn get(&self, path: &str, encoding: Encoding) -> Option<RegisteredResponse> {
+    /// Look up buffer_id by path and encoding
+    /// Returns the buffer_id for use with check_out()
+    pub fn get_buffer_id(&self, path: &str, encoding: Encoding) -> Option<u16> {
         let key = ResponseKey {
             path: Arc::from(path),
             encoding,
         };
-        self.responses.get(&key).map(|r| r.clone())
+        self.responses.get(&key).map(|r| *r.value())
     }
 
-    /// Get all buffers (for io_uring registration)
-    pub fn buffers(&self) -> &[Bytes] {
-        &self.buffers
+    /// Check out a fixed buffer from the registry
+    /// This gives you the actual buffer to write with write_fixed()
+    pub fn check_out(&self, buffer_id: u16) -> Option<tokio_uring::buf::fixed::FixedBuf> {
+        self.registry.check_out(buffer_id as usize)
     }
 
-    /// Total number of pre-built response buffers
+    /// Total number of registered buffers
     pub fn buffer_count(&self) -> usize {
-        self.buffers.len()
+        self.responses.len()
     }
 
     /// Get best available encoding for a path based on client Accept-Encoding
