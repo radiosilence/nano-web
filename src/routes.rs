@@ -64,7 +64,11 @@ impl ResponseCache {
 
     #[inline(always)]
     fn get(&self, path: &str, encoding: Encoding) -> Option<ResponseBuffer> {
-        self.get_map(encoding).get(path).map(|e| e.value().clone())
+        // Try requested encoding first, fallback to identity for non-compressible files
+        self.get_map(encoding)
+            .get(path)
+            .or_else(|| self.identity.get(path))
+            .map(|e| e.value().clone())
     }
 
     fn insert(&self, path: Arc<str>, encoding: Encoding, buf: ResponseBuffer) {

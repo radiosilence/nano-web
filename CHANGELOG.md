@@ -5,8 +5,9 @@ All notable changes to nano-web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.4]
+## [1.1.5]
 
+- Fixed non-compressible files (images, etc) returning 404 when Accept-Encoding header present
 - Zero-allocation response lookups (split response cache by encoding)
 - Static error responses (404/400 no longer allocate)
 - Fixed dev mode file reloading
