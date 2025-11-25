@@ -5,9 +5,7 @@ use crate::template::render_template;
 use anyhow::Result;
 use dashmap::DashMap;
 use fxhash::FxBuildHasher;
-use memmap2::Mmap;
 use rayon::prelude::*;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -78,7 +76,6 @@ impl ResponseCache {
 
 pub struct NanoWeb {
     pub routes: CachedRoutes,
-    pub mmap_cache: DashMap<Arc<str>, Arc<Mmap>, FxBuildHasher>,
     responses: ResponseCache,
 }
 
@@ -92,7 +89,6 @@ impl NanoWeb {
     pub fn new() -> Self {
         Self {
             routes: DashMap::with_hasher(FxBuildHasher::default()),
-            mmap_cache: DashMap::with_hasher(FxBuildHasher::default()),
             responses: ResponseCache::new(),
         }
     }
@@ -166,15 +162,7 @@ impl NanoWeb {
         public_dir: &Path,
         config_prefix: &str,
     ) -> Result<(Arc<str>, CachedRoute)> {
-        let content = if metadata.len() > 8192 {
-            let file = File::open(file_path)?;
-            let mmap = unsafe { Mmap::map(&file)? };
-            let url_path = self.file_path_to_url(file_path, public_dir)?;
-            self.mmap_cache.insert(url_path.clone(), Arc::new(mmap));
-            std::fs::read(file_path)?
-        } else {
-            std::fs::read(file_path)?
-        };
+        let content = std::fs::read(file_path)?;
 
         let modified = metadata.modified()?;
         let mime_config = get_mime_config(file_path);
@@ -277,11 +265,6 @@ impl NanoWeb {
         }
 
         Ok((url_path, route))
-    }
-
-    #[inline(always)]
-    pub fn get_route(&self, path: &str) -> Option<CachedRoute> {
-        self.routes.get(path).map(|entry| entry.value().clone())
     }
 
     fn file_path_to_url(&self, file_path: &Path, public_dir: &Path) -> Result<Arc<str>> {

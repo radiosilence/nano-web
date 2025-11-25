@@ -53,7 +53,7 @@ zstd = "0.13"
 fxhash = "0.2"
 ahash = "0.8"
 dashmap = "6.1"
-memmap2 = "0.9"
+
 rayon = "1.10"
 urlencoding = "2.1"
 
