@@ -1,23 +1,22 @@
 use anyhow::Result;
-use axum::{
-    extract::State,
-    http::{header, HeaderMap, StatusCode, Uri},
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
-use chrono::Utc;
+use bytes::Bytes;
+use http_body_util::Full;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Method, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
+use socket2::{Domain, Protocol, Socket, Type};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tower::ServiceBuilder;
-use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tracing::{debug, info};
 
+use crate::response_buffer::ResponseBuffer;
 use crate::routes::NanoWeb;
 
 #[derive(Clone)]
-pub struct AxumServeConfig {
+pub struct ServeConfig {
     pub public_dir: PathBuf,
     pub port: u16,
     pub dev: bool,
@@ -26,103 +25,99 @@ pub struct AxumServeConfig {
     pub log_requests: bool,
 }
 
-#[derive(Clone)]
 struct AppState {
     server: Arc<NanoWeb>,
-    config: AxumServeConfig,
+    config: ServeConfig,
 }
 
-pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
+/// Create a TCP listener with SO_REUSEPORT for better multi-core scaling
+fn create_reuse_port_listener(addr: SocketAddr) -> Result<std::net::TcpListener> {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+    socket.set_reuse_address(true)?;
+    #[cfg(unix)]
+    socket.set_reuse_port(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(8192)?; // Large backlog for high concurrency
+    Ok(socket.into())
+}
+
+pub async fn start_server(config: ServeConfig) -> Result<()> {
     let server = Arc::new(NanoWeb::new());
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
 
-    let state = AppState {
+    let state = Arc::new(AppState {
         server,
         config: config.clone(),
-    };
+    });
 
     info!("Routes loaded: {}", state.server.routes.len());
 
-    let app = create_router(state);
-    let addr = format!("0.0.0.0:{}", config.port);
-    let listener = TcpListener::bind(&addr).await?;
+    let addr: SocketAddr = ([0, 0, 0, 0], config.port).into();
+    let std_listener = create_reuse_port_listener(addr)?;
+    let listener = TcpListener::from_std(std_listener)?;
 
     info!("Starting server on http://{}", addr);
     info!("Serving directory: {:?}", config.public_dir);
 
-    axum::serve(listener, app).await?;
-    Ok(())
-}
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
+        let state = state.clone();
 
-fn create_router(state: AppState) -> Router {
-    let middleware_stack = ServiceBuilder::new()
-        .layer(SetResponseHeaderLayer::overriding(
-            header::X_CONTENT_TYPE_OPTIONS,
-            "nosniff".parse::<axum::http::HeaderValue>().unwrap(),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            header::X_FRAME_OPTIONS,
-            "SAMEORIGIN".parse::<axum::http::HeaderValue>().unwrap(),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            header::REFERRER_POLICY,
-            "strict-origin-when-cross-origin"
-                .parse::<axum::http::HeaderValue>()
-                .unwrap(),
-        ));
+        tokio::spawn(async move {
+            let service = service_fn(move |req| {
+                let state = state.clone();
+                async move { handle_request(req, state).await }
+            });
 
-    let app = Router::new()
-        .route("/_health", get(health_handler))
-        .fallback(get(file_handler));
-
-    if state.config.log_requests {
-        app.layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &axum::extract::Request| {
-                    tracing::info_span!("request", method = %request.method(), path = %request.uri().path())
-                })
-                .on_response(
-                    |response: &axum::response::Response, latency: std::time::Duration, _span: &tracing::Span| {
-                        tracing::info!(status = %response.status(), duration_ms = %latency.as_millis(), "request completed");
-                    },
-                ),
-        )
-        .layer(middleware_stack)
-        .with_state(state)
-    } else {
-        app.layer(middleware_stack).with_state(state)
+            if let Err(e) = http1::Builder::new()
+                .keep_alive(true)
+                .pipeline_flush(true)
+                .serve_connection(io, service)
+                .await
+            {
+                debug!("Connection error: {}", e);
+            }
+        });
     }
 }
 
-async fn health_handler() -> impl IntoResponse {
-    let response = format!(
-        r#"{{"status":"ok","timestamp":"{}"}}"#,
-        Utc::now().to_rfc3339()
-    );
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        response,
-    )
-}
+type HyperResponse = Response<Full<Bytes>>;
 
-async fn file_handler(
-    uri: Uri,
-    headers: HeaderMap,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    serve_file(uri.path(), headers, state).await
-}
+async fn handle_request(
+    req: Request<hyper::body::Incoming>,
+    state: Arc<AppState>,
+) -> Result<HyperResponse, std::convert::Infallible> {
+    if req.method() != Method::GET && req.method() != Method::HEAD {
+        return Ok(response(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "Method Not Allowed",
+        ));
+    }
 
-async fn serve_file(path: &str, request_headers: HeaderMap, state: AppState) -> impl IntoResponse {
-    debug!("Serving path: {}", path);
+    let path = req.uri().path();
 
+    // Health check
+    if path == "/_health" {
+        let body = format!(
+            r#"{{"status":"ok","timestamp":"{}"}}"#,
+            chrono::Utc::now().to_rfc3339()
+        );
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Full::new(Bytes::from(body)))
+            .unwrap());
+    }
+
+    // Path validation
     if let Err(e) = crate::path::validate_request_path(path) {
         tracing::warn!("Path validation failed for '{}': {}", path, e);
-        return (StatusCode::BAD_REQUEST, "Bad Request").into_response();
+        return Ok(response(StatusCode::BAD_REQUEST, "Bad Request"));
     }
 
-    // Dev mode: check if file changed and reload
+    // Dev mode: refresh if modified
     if state.config.dev {
         let _ = state.server.refresh_if_modified(
             path,
@@ -131,54 +126,58 @@ async fn serve_file(path: &str, request_headers: HeaderMap, state: AppState) -> 
         );
     }
 
-    let accept_encoding = request_headers
-        .get(header::ACCEPT_ENCODING)
+    let accept_encoding = req
+        .headers()
+        .get("accept-encoding")
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    let mut response_buf = state.server.get_response(path, accept_encoding);
+    let mut buf = state.server.get_response(path, accept_encoding);
 
     // Try with trailing slash
-    if response_buf.is_none() && !path.ends_with('/') {
-        response_buf = state
-            .server
-            .get_response(&format!("{}/", path), accept_encoding);
+    if buf.is_none() && !path.ends_with('/') {
+        let with_slash = format!("{}/", path);
+        buf = state.server.get_response(&with_slash, accept_encoding);
     }
 
     // SPA fallback
-    if response_buf.is_none() && state.config.spa_mode {
+    if buf.is_none() && state.config.spa_mode {
         debug!("SPA fallback for: {}", path);
-        response_buf = state.server.get_response("/", accept_encoding);
+        buf = state.server.get_response("/", accept_encoding);
     }
 
-    match response_buf {
-        Some(buf) => build_response(&buf).into_response(),
+    match buf {
+        Some(b) => Ok(build_response(&b)),
         None => {
             debug!("Route not found: {}", path);
-            (StatusCode::NOT_FOUND, "Not Found").into_response()
+            Ok(response(StatusCode::NOT_FOUND, "Not Found"))
         }
     }
 }
 
-fn build_response(buf: &crate::response_buffer::ResponseBuffer) -> impl IntoResponse {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        buf.content_type.as_ref().parse().unwrap(),
-    );
-    headers.insert(header::ETAG, buf.etag.as_ref().parse().unwrap());
-    headers.insert(
-        header::LAST_MODIFIED,
-        buf.last_modified.as_ref().parse().unwrap(),
-    );
-    headers.insert(
-        header::CACHE_CONTROL,
-        buf.cache_control.as_ref().parse().unwrap(),
-    );
+#[inline(always)]
+fn response(status: StatusCode, body: &'static str) -> HyperResponse {
+    Response::builder()
+        .status(status)
+        .body(Full::new(Bytes::from_static(body.as_bytes())))
+        .unwrap()
+}
+
+#[inline(always)]
+fn build_response(buf: &ResponseBuffer) -> HyperResponse {
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", buf.content_type.as_ref())
+        .header("etag", buf.etag.as_ref())
+        .header("last-modified", buf.last_modified.as_ref())
+        .header("cache-control", buf.cache_control.as_ref())
+        .header("x-content-type-options", "nosniff")
+        .header("x-frame-options", "SAMEORIGIN")
+        .header("referrer-policy", "strict-origin-when-cross-origin");
 
     if let Some(encoding) = buf.content_encoding {
-        headers.insert(header::CONTENT_ENCODING, encoding.parse().unwrap());
+        builder = builder.header("content-encoding", encoding);
     }
 
-    (StatusCode::OK, headers, buf.body.clone()).into_response()
+    builder.body(Full::new(buf.body.clone())).unwrap()
 }
