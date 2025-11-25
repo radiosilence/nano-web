@@ -1,33 +1,21 @@
-// anyhow::Result - Provides a convenient Result<T, anyhow::Error> type alias
-// Much nicer than Result<T, Box<dyn std::error::Error>> for error handling
 use anyhow::Result;
 use axum::{
-    // State extractor - Axum's way to inject shared state into handler functions
     extract::State,
-    // HTTP primitives - StatusCode is an enum, HeaderMap is HashMap-like for headers
     http::{header, HeaderMap, StatusCode, Uri},
-    // Trait that converts types into HTTP responses (implemented for tuples, strings, etc)
     response::IntoResponse,
-    // Routing - get() creates a route that only handles GET requests
     routing::get,
     Router,
 };
 use chrono::Utc;
-// PathBuf owns path data (vs &Path which borrows) - we need owned data for the config struct
 use std::path::PathBuf;
-// Arc for thread-safe sharing of NanoWeb across all HTTP request handlers
 use std::sync::Arc;
-// TcpListener for async TCP socket binding in Tokio
 use tokio::net::TcpListener;
-// Tower middleware system - composable request/response processing
 use tower::ServiceBuilder;
 use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tracing::{debug, info};
 
 use crate::routes::NanoWeb;
 
-// #[derive(Clone)] - Automatically generates clone() method that clones each field
-// We need Clone because Axum requires state to be cloneable (shared across request handlers)
 #[derive(Clone)]
 pub struct AxumServeConfig {
     pub public_dir: PathBuf,
@@ -38,63 +26,38 @@ pub struct AxumServeConfig {
     pub log_requests: bool,
 }
 
-// AppState gets cloned for every HTTP request handler (Axum requirement)
-// Arc<NanoWeb> clone is cheap (just increments reference count)
-// AxumServeConfig clone is more expensive (String allocation) but happens per-request
 #[derive(Clone)]
 struct AppState {
-    server: Arc<NanoWeb>,    // Shared read-only access to our route cache
-    config: AxumServeConfig, // Configuration that handlers might need
+    server: Arc<NanoWeb>,
+    config: AxumServeConfig,
 }
 
-// async fn - Returns a Future that implements the async state machine
-// Result<()> - Returns () on success, anyhow::Error on failure
 pub async fn start_axum_server(config: AxumServeConfig) -> Result<()> {
-    // Arc::new allocates NanoWeb on the heap and wraps in atomic reference counter
-    // Needed because multiple concurrent request handlers will access the same cache
     let server = Arc::new(NanoWeb::new());
-
-    // Populate routes using our existing route system
-    // &config.public_dir - borrowing because populate_routes doesn't need ownership
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
 
     let state = AppState {
-        server,                 // Arc<NanoWeb> moved into state
-        config: config.clone(), // Clone needed because we use config again below (line 65)
+        server,
+        config: config.clone(),
     };
 
     info!("Routes loaded: {}", state.server.routes.len());
 
     let app = create_router(state);
-
-    // format! macro - creates owned String by formatting template
     let addr = format!("0.0.0.0:{}", config.port);
-    // TcpListener::bind is async - returns Future<Result<TcpListener, Error>>
-    // .await suspends this function until the future completes
-    // ? operator propagates any bind errors up to caller
     let listener = TcpListener::bind(&addr).await?;
 
     info!("Starting server on http://{}", addr);
     info!("Serving directory: {:?}", config.public_dir);
 
-    // axum::serve takes ownership of listener and app, runs until server shuts down
-    // This is the main server loop that handles all incoming HTTP connections
     axum::serve(listener, app).await?;
-
-    // Only reached when server shuts down gracefully
     Ok(())
 }
 
-// Takes AppState by value (ownership) - Router needs to own the state for sharing
 fn create_router(state: AppState) -> Router {
-    // ServiceBuilder uses the builder pattern to compose middleware layers
-    // Each .layer() call wraps the next layer - processed in reverse order during requests
     let middleware_stack = ServiceBuilder::new()
-        // Security headers - SetResponseHeaderLayer adds these to every response
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
-            // .parse() converts &str to HeaderValue, .unwrap() panics on invalid headers
-            // Safe because these are known-good header values
             "nosniff".parse::<axum::http::HeaderValue>().unwrap(),
         ))
         .layer(SetResponseHeaderLayer::overriding(
@@ -108,115 +71,91 @@ fn create_router(state: AppState) -> Router {
                 .unwrap(),
         ));
 
-    // Router::new() creates empty router, then we build it with method chaining
     let app = Router::new()
         .route("/_health", get(health_handler))
         .fallback(get(file_handler));
 
-    // Conditional middleware - only add tracing if log_requests is true
     if state.config.log_requests {
         app.layer(
-            // TraceLayer automatically creates tracing spans for HTTP requests
             TraceLayer::new_for_http()
-                // Closure that creates a span for each request
-                // |request: &Request| - closure parameter with explicit type
                 .make_span_with(|request: &axum::extract::Request| {
-                    // tracing::info_span! macro creates a span with key=value fields
-                    // % means "use Display formatting" for the value
-                    tracing::info_span!(
-                        "request",
-                        method = %request.method(),
-                        path = %request.uri().path(),
-                    )
+                    tracing::info_span!("request", method = %request.method(), path = %request.uri().path())
                 })
-                // Closure called when response is ready
-                // Multiple parameters in closure - latency calculated by TraceLayer
                 .on_response(
-                    |response: &axum::response::Response,
-                     latency: std::time::Duration,
-                     _span: &tracing::Span| {
-                        // _span prefix means "unused parameter"
-                        tracing::info!(
-                            status = %response.status(),
-                            duration_ms = %latency.as_millis(),
-                            "request completed"
-                        );
+                    |response: &axum::response::Response, latency: std::time::Duration, _span: &tracing::Span| {
+                        tracing::info!(status = %response.status(), duration_ms = %latency.as_millis(), "request completed");
                     },
                 ),
         )
-        .layer(middleware_stack) // Add our security headers
-        .with_state(state) // Inject AppState into all handlers
+        .layer(middleware_stack)
+        .with_state(state)
     } else {
-        // Same router but without tracing middleware
         app.layer(middleware_stack).with_state(state)
     }
 }
 
-// impl IntoResponse - returns "some type that implements IntoResponse"
-// This lets us return different types (tuples, strings, etc.) from the same function
-// Axum provides IntoResponse impls for many types including tuples
 async fn health_handler() -> impl IntoResponse {
-    let timestamp = Utc::now().to_rfc3339(); // ISO 8601 timestamp string
-                                             // r#"..."# is a raw string literal - no need to escape quotes inside
-    let response = format!(r#"{{"status":"ok","timestamp":"{}"}}"#, timestamp);
-    // Tuple that implements IntoResponse: (StatusCode, Headers, Body)
-    // Array syntax [(key, value)] creates headers - more ergonomic than HeaderMap
+    let response = format!(
+        r#"{{"status":"ok","timestamp":"{}"}}"#,
+        Utc::now().to_rfc3339()
+    );
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
-        response, // String implements IntoResponse as the response body
+        response,
     )
 }
 
-// Axum handler function - parameters are "extractors" that Axum provides
-// headers: HeaderMap - Axum extracts request headers automatically
-// State(state): State<AppState> - Pattern matching to extract our injected state
 async fn file_handler(
     uri: Uri,
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let path = uri.path();
-    serve_file(path, headers, state).await
+    serve_file(uri.path(), headers, state).await
 }
 
 async fn serve_file(path: &str, request_headers: HeaderMap, state: AppState) -> impl IntoResponse {
     debug!("Serving path: {}", path);
 
-    // Security: validate path to prevent directory traversal attacks
     if let Err(e) = crate::path::validate_request_path(path) {
         tracing::warn!("Path validation failed for '{}': {}", path, e);
-        let buf = crate::response_buffer::ResponseBuffer::bad_request();
-        return build_response(&buf);
+        return (StatusCode::BAD_REQUEST, "Bad Request").into_response();
     }
 
-    // Extract Accept-Encoding
+    // Dev mode: check if file changed and reload
+    if state.config.dev {
+        let _ = state.server.refresh_if_modified(
+            path,
+            &state.config.public_dir,
+            &state.config.config_prefix,
+        );
+    }
+
     let accept_encoding = request_headers
         .get(header::ACCEPT_ENCODING)
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    // O(1) lookup in pre-baked response cache
-    let mut response_buf = state.server.get_ultra(path, accept_encoding);
+    let mut response_buf = state.server.get_response(path, accept_encoding);
 
-    // Fallback 1: Try with trailing slash
+    // Try with trailing slash
     if response_buf.is_none() && !path.ends_with('/') {
-        let path_with_slash = format!("{}/", path);
-        response_buf = state.server.get_ultra(&path_with_slash, accept_encoding);
+        response_buf = state
+            .server
+            .get_response(&format!("{}/", path), accept_encoding);
     }
 
-    // Fallback 2: SPA mode
+    // SPA fallback
     if response_buf.is_none() && state.config.spa_mode {
         debug!("SPA fallback for: {}", path);
-        response_buf = state.server.get_ultra("/", accept_encoding);
+        response_buf = state.server.get_response("/", accept_encoding);
     }
 
     match response_buf {
-        Some(buf) => build_response(&buf),
+        Some(buf) => build_response(&buf).into_response(),
         None => {
             debug!("Route not found: {}", path);
-            let buf = crate::response_buffer::ResponseBuffer::not_found();
-            build_response(&buf)
+            (StatusCode::NOT_FOUND, "Not Found").into_response()
         }
     }
 }
