@@ -1,7 +1,6 @@
 use bytes::Bytes;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-/// Encoding for lookup key
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Encoding {
     Identity,
@@ -11,9 +10,11 @@ pub enum Encoding {
 }
 
 impl Encoding {
-    /// Parse from Accept-Encoding header, returns best available
+    pub const ALL: [Self; 4] = [Self::Identity, Self::Gzip, Self::Brotli, Self::Zstd];
+
+    /// Priority: br > zstd > gzip > identity
+    #[inline(always)]
     pub fn from_accept_encoding(accept: &str) -> Self {
-        // Priority: br > zstd > gzip > identity
         if accept.contains("br") {
             Self::Brotli
         } else if accept.contains("zstd") {
@@ -35,15 +36,9 @@ impl Encoding {
     }
 }
 
-/// Pre-baked response buffer: body + metadata for hyper
-/// The body is pre-compressed, headers are pre-computed strings
-/// Hyper serializes headers, we provide zero-allocation body via Bytes
 #[derive(Debug, Clone)]
 pub struct ResponseBuffer {
-    /// Pre-compressed body (Bytes wraps Arc<Vec<u8>> - zero copy on clone)
     pub body: Bytes,
-
-    /// Pre-computed header values
     pub content_type: Arc<str>,
     pub content_encoding: Option<&'static str>,
     pub etag: Arc<str>,
@@ -51,8 +46,26 @@ pub struct ResponseBuffer {
     pub cache_control: Arc<str>,
 }
 
+// Static error responses - no allocation on error paths
+static NOT_FOUND: LazyLock<ResponseBuffer> = LazyLock::new(|| ResponseBuffer {
+    body: Bytes::from_static(b"Not Found"),
+    content_type: Arc::from("text/plain"),
+    content_encoding: None,
+    etag: Arc::from("\"404\""),
+    last_modified: Arc::from("Thu, 01 Jan 1970 00:00:00 GMT"),
+    cache_control: Arc::from("no-cache"),
+});
+
+static BAD_REQUEST: LazyLock<ResponseBuffer> = LazyLock::new(|| ResponseBuffer {
+    body: Bytes::from_static(b"Bad Request"),
+    content_type: Arc::from("text/plain"),
+    content_encoding: None,
+    etag: Arc::from("\"400\""),
+    last_modified: Arc::from("Thu, 01 Jan 1970 00:00:00 GMT"),
+    cache_control: Arc::from("no-cache"),
+});
+
 impl ResponseBuffer {
-    /// Create response buffer from pre-compressed body and metadata
     pub fn new(
         body: Vec<u8>,
         content_type: Arc<str>,
@@ -71,27 +84,13 @@ impl ResponseBuffer {
         }
     }
 
-    /// Static 404 response
+    #[inline(always)]
     pub fn not_found() -> Self {
-        Self::new(
-            b"Not Found".to_vec(),
-            Arc::from("text/plain"),
-            None,
-            Arc::from("\"404\""),
-            Arc::from("Mon, 01 Jan 2024 00:00:00 GMT"),
-            Arc::from("no-cache"),
-        )
+        NOT_FOUND.clone()
     }
 
-    /// Static 400 response
+    #[inline(always)]
     pub fn bad_request() -> Self {
-        Self::new(
-            b"Bad Request".to_vec(),
-            Arc::from("text/plain"),
-            None,
-            Arc::from("\"400\""),
-            Arc::from("Mon, 01 Jan 2024 00:00:00 GMT"),
-            Arc::from("no-cache"),
-        )
+        BAD_REQUEST.clone()
     }
 }

@@ -5,6 +5,15 @@ All notable changes to nano-web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4]
+
+- Zero-allocation response lookups (split response cache by encoding)
+- Static error responses (404/400 no longer allocate)
+- Fixed dev mode file reloading
+- Fixed status codes for 404 and 400 responses
+- Consistent encoding priority (br > zstd > gzip)
+- Code cleanup
+
 ## [1.1.2]
 
 - Add musl builds
