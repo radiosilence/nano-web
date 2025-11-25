@@ -1,15 +1,12 @@
 use anyhow::Result;
 use bytes::Bytes;
 use http_body_util::Full;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Method, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
-use socket2::{Domain, Protocol, Socket, Type};
+use hyper::{server::conn::http1, service::service_fn, Method, Request, Response, StatusCode};
+use monoio::{io::IntoPollIo, net::TcpListener};
+use monoio_compat::hyper::{MonoioIo, MonoioTimer};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::net::TcpListener;
+use std::rc::Rc;
 use tracing::{debug, info};
 
 use crate::response_buffer::ResponseBuffer;
@@ -26,55 +23,96 @@ pub struct ServeConfig {
 }
 
 struct AppState {
-    server: Arc<NanoWeb>,
+    server: Rc<NanoWeb>,
     config: ServeConfig,
 }
 
-/// Create a TCP listener with SO_REUSEPORT for better multi-core scaling
-fn create_reuse_port_listener(addr: SocketAddr) -> Result<std::net::TcpListener> {
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
-    socket.set_reuse_address(true)?;
-    #[cfg(unix)]
-    socket.set_reuse_port(true)?;
-    socket.set_nonblocking(true)?;
-    socket.bind(&addr.into())?;
-    socket.listen(8192)?; // Large backlog for high concurrency
-    Ok(socket.into())
+pub fn start_server(config: ServeConfig) -> Result<()> {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+
+    info!("Starting {} worker threads", cores);
+
+    let mut threads = Vec::with_capacity(cores);
+
+    for i in 0..cores {
+        let config = config.clone();
+        threads.push(std::thread::spawn(move || {
+            monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                .enable_timer()
+                .build()
+                .expect("Failed to build monoio runtime")
+                .block_on(run_server(config, i));
+        }));
+    }
+
+    for t in threads {
+        let _ = t.join();
+    }
+
+    Ok(())
 }
 
-pub async fn start_server(config: ServeConfig) -> Result<()> {
-    let server = Arc::new(NanoWeb::new());
-    server.populate_routes(&config.public_dir, &config.config_prefix)?;
+async fn run_server(config: ServeConfig, worker_id: usize) {
+    let server = Rc::new(NanoWeb::new());
+    if let Err(e) = server.populate_routes(&config.public_dir, &config.config_prefix) {
+        tracing::error!("Failed to populate routes: {}", e);
+        return;
+    }
 
-    let state = Arc::new(AppState {
+    if worker_id == 0 {
+        info!("Routes loaded: {}", server.routes.len());
+    }
+
+    let state = Rc::new(AppState {
         server,
         config: config.clone(),
     });
 
-    info!("Routes loaded: {}", state.server.routes.len());
-
     let addr: SocketAddr = ([0, 0, 0, 0], config.port).into();
-    let std_listener = create_reuse_port_listener(addr)?;
-    let listener = TcpListener::from_std(std_listener)?;
+    let listener = match TcpListener::bind(addr) {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("Worker {} failed to bind: {}", worker_id, e);
+            return;
+        }
+    };
 
-    info!("Starting server on http://{}", addr);
-    info!("Serving directory: {:?}", config.public_dir);
+    if worker_id == 0 {
+        info!("Starting server on http://{}", addr);
+        info!("Serving directory: {:?}", config.public_dir);
+    }
 
     loop {
-        let (stream, _) = listener.accept().await?;
-        let io = TokioIo::new(stream);
-        let state = state.clone();
+        let (stream, _) = match listener.accept().await {
+            Ok(s) => s,
+            Err(e) => {
+                debug!("Accept error: {}", e);
+                continue;
+            }
+        };
 
-        tokio::spawn(async move {
-            let service = service_fn(move |req| {
+        let poll_stream = match stream.into_poll_io() {
+            Ok(s) => MonoioIo::new(s),
+            Err(e) => {
+                debug!("Stream conversion error: {}", e);
+                continue;
+            }
+        };
+
+        let state = state.clone();
+        monoio::spawn(async move {
+            let service = service_fn(|req| {
                 let state = state.clone();
                 async move { handle_request(req, state).await }
             });
 
             if let Err(e) = http1::Builder::new()
+                .timer(MonoioTimer)
                 .keep_alive(true)
                 .pipeline_flush(true)
-                .serve_connection(io, service)
+                .serve_connection(poll_stream, service)
                 .await
             {
                 debug!("Connection error: {}", e);
@@ -87,7 +125,7 @@ type HyperResponse = Response<Full<Bytes>>;
 
 async fn handle_request(
     req: Request<hyper::body::Incoming>,
-    state: Arc<AppState>,
+    state: Rc<AppState>,
 ) -> Result<HyperResponse, std::convert::Infallible> {
     if req.method() != Method::GET && req.method() != Method::HEAD {
         return Ok(response(

@@ -95,7 +95,7 @@ pub enum Commands {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         // Initialize logging with defaults for non-serve commands
         if self.command.is_none() || !matches!(self.command, Some(Commands::Serve { .. })) {
             init_logging(&self.log_level, &self.log_format);
@@ -131,7 +131,7 @@ impl Cli {
                     log_requests: log_requests || self.log_requests,
                 };
 
-                final_config.serve().await
+                final_config.serve()
             }
             Some(Commands::Version) => {
                 println!("{}", full_version());
@@ -163,7 +163,7 @@ struct FinalServeConfig {
 }
 
 impl FinalServeConfig {
-    async fn serve(self) -> Result<()> {
+    fn serve(self) -> Result<()> {
         let config = crate::server::ServeConfig {
             public_dir: self.public_dir,
             port: self.port,
@@ -172,7 +172,7 @@ impl FinalServeConfig {
             config_prefix: self.config_prefix,
             log_requests: self.log_requests,
         };
-        crate::server::start_server(config).await
+        crate::server::start_server(config)
     }
 }
 
