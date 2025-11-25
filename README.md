@@ -1,27 +1,28 @@
-# nano-web
+# nano-web (monoio branch)
 
-![CI](https://github.com/radiosilence/nano-web/actions/workflows/ci.yml/badge.svg)
-![Build](https://github.com/radiosilence/nano-web/actions/workflows/build.yml/badge.svg)
-[![Crates.io](https://img.shields.io/crates/v/nano-web.svg)](https://crates.io/crates/nano-web)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+**EXPERIMENTAL** - monoio/io_uring runtime exploration. Results: slower than tokio.
 
-Static file server. Pre-loads and pre-compresses all files at startup for near-zero latency serving.
+## Benchmark Results
 
-## Performance
+| Runtime            | Platform | Req/sec     | Avg Latency |
+| ------------------ | -------- | ----------- | ----------- |
+| Tokio/Hyper (main) | Linux    | **87,262**  | **0.57ms**  |
+| Monoio/io_uring    | Linux    | 82,678      | 0.60ms      |
+| Tokio/Hyper (main) | macOS    | **159,834** | **0.28ms**  |
+| Monoio/kqueue      | macOS    | 125,355     | 0.40ms      |
 
-- Raw hyper (no framework overhead)
-- SO_REUSEPORT for multi-core scaling
-- Files pre-compressed at startup (brotli/gzip/zstd)
-- Lock-free concurrent routing (DashMap + FxHash)
-- Zero-copy responses (Bytes)
+**Conclusion**: Tokio wins. The overhead from monoio-compat's hyper adapter and per-worker cache duplication outweighs any io_uring syscall savings. For an in-memory static server, syscalls aren't the bottleneck.
 
-Benchmark (M3 Max):
+---
 
-```
-wrk -c 50 -d 10 -t 50 http://localhost:3000
-Requests/sec: 149838.48
-Latency: 328.63us avg
-```
+Static file server. Pre-loads and pre-compresses all files at startup.
+
+## Changes from main
+
+- Replaces tokio with monoio thread-per-core runtime
+- Uses io_uring on Linux 5.6+, kqueue on macOS
+- Each worker has own route cache (no cross-thread sync)
+- Hyper via monoio-compat adapter layer
 
 ## Install
 
