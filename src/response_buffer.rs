@@ -25,15 +25,6 @@ impl Encoding {
             Self::Identity
         }
     }
-
-    pub fn header_value(&self) -> Option<&'static str> {
-        match self {
-            Self::Identity => None,
-            Self::Gzip => Some("gzip"),
-            Self::Brotli => Some("br"),
-            Self::Zstd => Some("zstd"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
