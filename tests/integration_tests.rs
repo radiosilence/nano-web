@@ -276,3 +276,32 @@ async fn test_path_traversal_protection() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_non_compressible_with_accept_encoding() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+
+    // Create a fake PNG (non-compressible file type)
+    let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    fs::write(temp_path.join("image.png"), png_header).unwrap();
+
+    let _server = create_test_server(temp_path, 3009, false, false).await;
+    sleep(Duration::from_millis(100)).await;
+
+    // Request with Accept-Encoding header (like browsers do)
+    let client = reqwest::Client::new();
+    let response = client
+        .get("http://localhost:3009/image.png")
+        .header("Accept-Encoding", "gzip, deflate, br, zstd")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Non-compressible file should return 200 even with Accept-Encoding"
+    );
+    assert_eq!(response.headers().get("content-type").unwrap(), "image/png");
+}
