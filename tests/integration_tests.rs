@@ -11,7 +11,7 @@ async fn create_test_server(
     spa_mode: bool,
     dev_mode: bool,
 ) -> tokio::task::JoinHandle<()> {
-    let config = nano_web::server::AxumServeConfig {
+    let config = nano_web::server::ServeConfig {
         public_dir: temp_dir.to_path_buf(),
         port,
         dev: dev_mode,
@@ -21,7 +21,7 @@ async fn create_test_server(
     };
 
     tokio::spawn(async move {
-        nano_web::server::start_axum_server(config).await.unwrap();
+        nano_web::server::start_server(config).await.unwrap();
     })
 }
 

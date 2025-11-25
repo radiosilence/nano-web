@@ -164,7 +164,7 @@ struct FinalServeConfig {
 
 impl FinalServeConfig {
     async fn serve(self) -> Result<()> {
-        let config = crate::server::AxumServeConfig {
+        let config = crate::server::ServeConfig {
             public_dir: self.public_dir,
             port: self.port,
             dev: self.dev,
@@ -172,7 +172,7 @@ impl FinalServeConfig {
             config_prefix: self.config_prefix,
             log_requests: self.log_requests,
         };
-        crate::server::start_axum_server(config).await
+        crate::server::start_server(config).await
     }
 }
 
