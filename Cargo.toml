@@ -1,6 +1,6 @@
 [package]
 name = "nano-web"
-version = "1.1.5"
+version = "1.1.6"
 edition = "2021"
 description = "Static file server built with Rust with pre-compressed in-memory caching"
 authors = ["James Cleveland <jc@blit.cc>"]
@@ -29,7 +29,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 hyper = { version = "1.6", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server", "http1", "http2"] }
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { version = "0.6", features = ["all"] }
 http-body-util = "0.1"
 mime_guess = "2.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -55,7 +55,7 @@ mimalloc = "0.1.43"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.8"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 cargo-release = "0.25.18"
 
 
