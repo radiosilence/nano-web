@@ -3,10 +3,4 @@ publish = false
 # Let cargo-release handle git tag and push to trigger CI
 push = true
 tag = true
-
 allow-branch = ["main"]
-
-# Update version in VERSION file and Cargo.toml
-pre-release-replacements = [
-    { file = "VERSION", search = "^[0-9\\.]+", replace = "{{version}}" },
-]

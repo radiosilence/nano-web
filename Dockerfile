@@ -15,7 +15,6 @@ WORKDIR /build
 # Copy Cargo files first for better caching
 COPY Cargo.toml Cargo.lock ./
 COPY src src
-COPY VERSION ./
 
 # Build with static linking and additional optimizations for scratch image
 ENV RUSTFLAGS="-C target-feature=+crt-static -C target-cpu=generic"
