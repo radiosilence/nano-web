@@ -74,6 +74,10 @@ Inject env vars into HTML at startup:
 
 Variables: `{{env.VAR_NAME}}`, `{{Json}}`, `{{EscapedJson}}`
 
+## Caching
+
+ETag and `If-None-Match` supported - returns 304 Not Modified when content hasn't changed.
+
 ## Health Check
 
 `/_health` returns `{"status":"ok","timestamp":"..."}`

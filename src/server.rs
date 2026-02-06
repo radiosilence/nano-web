@@ -12,7 +12,6 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{debug, info};
 
-use crate::response_buffer::ResponseBuffer;
 use crate::routes::NanoWeb;
 
 #[derive(Clone)]
@@ -51,7 +50,7 @@ pub async fn start_server(config: ServeConfig) -> Result<()> {
         config: config.clone(),
     });
 
-    info!("Routes loaded: {}", state.server.routes.len());
+    info!("Routes loaded: {}", state.server.route_count());
 
     let addr: SocketAddr = ([0, 0, 0, 0], config.port).into();
     let std_listener = create_reuse_port_listener(addr)?;
@@ -89,7 +88,9 @@ async fn handle_request(
     req: Request<hyper::body::Incoming>,
     state: Arc<AppState>,
 ) -> Result<HyperResponse, std::convert::Infallible> {
-    if req.method() != Method::GET && req.method() != Method::HEAD {
+    let is_head = req.method() == Method::HEAD;
+
+    if req.method() != Method::GET && !is_head {
         return Ok(response(
             StatusCode::METHOD_NOT_ALLOWED,
             "Method Not Allowed",
@@ -132,6 +133,11 @@ async fn handle_request(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
+    let if_none_match = req
+        .headers()
+        .get("if-none-match")
+        .and_then(|h| h.to_str().ok());
+
     let mut buf = state.server.get_response(path, accept_encoding);
 
     // Try with trailing slash
@@ -146,13 +152,37 @@ async fn handle_request(
         buf = state.server.get_response("/", accept_encoding);
     }
 
-    match buf {
-        Some(b) => Ok(build_response(&b)),
+    let resp = match buf {
+        Some(ref b) => {
+            // ETag conditional: return 304 if client already has this version
+            if let Some(etag) = if_none_match {
+                if etag == b.etag.as_ref() {
+                    return Ok(Response::builder()
+                        .status(StatusCode::NOT_MODIFIED)
+                        .header("etag", b.etag.as_ref())
+                        .header("cache-control", b.cache_control.as_ref())
+                        .body(Full::new(Bytes::new()))
+                        .unwrap());
+                }
+            }
+            build_response(b, is_head)
+        }
         None => {
             debug!("Route not found: {}", path);
-            Ok(response(StatusCode::NOT_FOUND, "Not Found"))
+            response(StatusCode::NOT_FOUND, "Not Found")
         }
+    };
+
+    if state.config.log_requests {
+        info!(
+            method = %req.method(),
+            path = path,
+            status = resp.status().as_u16(),
+            "request"
+        );
     }
+
+    Ok(resp)
 }
 
 #[inline(always)]
@@ -164,7 +194,7 @@ fn response(status: StatusCode, body: &'static str) -> HyperResponse {
 }
 
 #[inline(always)]
-fn build_response(buf: &ResponseBuffer) -> HyperResponse {
+fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool) -> HyperResponse {
     let mut builder = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", buf.content_type.as_ref())
@@ -179,5 +209,11 @@ fn build_response(buf: &ResponseBuffer) -> HyperResponse {
         builder = builder.header("content-encoding", encoding);
     }
 
-    builder.body(Full::new(buf.body.clone())).unwrap()
+    let body = if head_only {
+        Bytes::new()
+    } else {
+        buf.body.clone()
+    };
+
+    builder.body(Full::new(body)).unwrap()
 }
