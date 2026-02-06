@@ -38,18 +38,6 @@ impl CompressedContent {
             zstd: Some(zstd?),
         })
     }
-
-    pub fn get_best_encoding(&self, accept_encoding: &str) -> (&'static str, &Bytes) {
-        if accept_encoding.contains("zstd") && self.zstd.is_some() {
-            ("zstd", self.zstd.as_ref().unwrap())
-        } else if accept_encoding.contains("br") && self.brotli.is_some() {
-            ("br", self.brotli.as_ref().unwrap())
-        } else if accept_encoding.contains("gzip") && self.gzip.is_some() {
-            ("gzip", self.gzip.as_ref().unwrap())
-        } else {
-            ("identity", &self.plain)
-        }
-    }
 }
 
 pub fn gzip_compress(data: &[u8]) -> Result<Bytes> {

@@ -97,7 +97,4 @@ mod tests {
         assert!(validate_request_path("/path/with/../../traversal").is_err());
         assert!(validate_request_path("/path\0null").is_err());
     }
-
-    // Note: parse_request_line_secure was removed as it's not used in the Axum implementation
-    // The Axum HTTP stack handles request parsing internally
 }
