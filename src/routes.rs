@@ -15,22 +15,13 @@ use walkdir::WalkDir;
 type RouteMap = DashMap<Arc<str>, ResponseBuffer, FxBuildHasher>;
 
 #[derive(Debug, Clone)]
-pub struct CachedRoute {
-    pub content: Arc<CompressedContent>,
-    pub path: Arc<PathBuf>,
-    pub modified: SystemTime,
-    pub headers: Arc<CachedRouteHeaders>,
+struct CachedRoute {
+    content: Arc<CompressedContent>,
+    path: Arc<PathBuf>,
+    modified: SystemTime,
 }
 
-#[derive(Debug, Clone)]
-pub struct CachedRouteHeaders {
-    pub content_type: Arc<str>,
-    pub last_modified: Arc<str>,
-    pub etag: Arc<str>,
-    pub cache_control: Arc<str>,
-}
-
-pub type CachedRoutes = DashMap<Arc<str>, CachedRoute, FxBuildHasher>;
+type CachedRoutes = DashMap<Arc<str>, CachedRoute, FxBuildHasher>;
 
 /// Pre-baked responses per encoding. Separate maps enable &str lookup against Arc<str> keys.
 struct ResponseCache {
@@ -75,7 +66,7 @@ impl ResponseCache {
 }
 
 pub struct NanoWeb {
-    pub routes: CachedRoutes,
+    routes: CachedRoutes,
     responses: ResponseCache,
 }
 
@@ -91,6 +82,10 @@ impl NanoWeb {
             routes: DashMap::with_hasher(FxBuildHasher::default()),
             responses: ResponseCache::new(),
         }
+    }
+
+    pub fn route_count(&self) -> usize {
+        self.routes.len()
     }
 
     #[inline(always)]
@@ -181,30 +176,21 @@ impl NanoWeb {
         };
 
         let compressed = CompressedContent::new(processed_content, mime_config.is_compressible)?;
-        let etag = self.generate_etag(&modified, &compressed.plain);
-        let last_modified = self.format_http_date(modified);
+        let etag = Self::generate_etag(&modified, &compressed.plain);
+        let last_modified = Self::format_http_date(modified);
 
-        let headers = Arc::new(CachedRouteHeaders {
-            content_type: Arc::from(mime_config.mime_type.as_str()),
-            last_modified: Arc::from(last_modified.as_str()),
-            etag: Arc::from(etag.as_str()),
-            cache_control: Arc::from(get_cache_control(&mime_config.mime_type)),
-        });
+        let ct: Arc<str> = Arc::from(mime_config.mime_type.as_str());
+        let etag: Arc<str> = Arc::from(etag.as_str());
+        let lm: Arc<str> = Arc::from(last_modified.as_str());
+        let cc: Arc<str> = Arc::from(get_cache_control(&mime_config.mime_type));
 
         let route = CachedRoute {
             content: Arc::new(compressed),
             path: Arc::new(file_path.to_path_buf()),
             modified,
-            headers: headers.clone(),
         };
 
-        let url_path = self.file_path_to_url(file_path, public_dir)?;
-
-        // Pre-bake response buffers for all encodings
-        let ct = &headers.content_type;
-        let etag = &headers.etag;
-        let lm = &headers.last_modified;
-        let cc = &headers.cache_control;
+        let url_path = Self::file_path_to_url(file_path, public_dir)?;
 
         self.responses.insert(
             url_path.clone(),
@@ -267,13 +253,13 @@ impl NanoWeb {
         Ok((url_path, route))
     }
 
-    fn file_path_to_url(&self, file_path: &Path, public_dir: &Path) -> Result<Arc<str>> {
+    fn file_path_to_url(file_path: &Path, public_dir: &Path) -> Result<Arc<str>> {
         let relative = file_path.strip_prefix(public_dir)?;
         let url_path = format!("/{}", relative.to_string_lossy().replace('\\', "/"));
         Ok(Arc::from(url_path.as_str()))
     }
 
-    fn generate_etag(&self, modified: &SystemTime, content: &[u8]) -> String {
+    fn generate_etag(modified: &SystemTime, content: &[u8]) -> String {
         use std::time::UNIX_EPOCH;
         let timestamp = modified
             .duration_since(UNIX_EPOCH)
@@ -282,7 +268,7 @@ impl NanoWeb {
         format!("\"{:x}-{:x}\"", timestamp, content.len())
     }
 
-    fn format_http_date(&self, time: SystemTime) -> String {
+    fn format_http_date(time: SystemTime) -> String {
         let datetime = chrono::DateTime::<chrono::Utc>::from(time);
         datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
     }

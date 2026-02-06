@@ -121,8 +121,8 @@ async fn test_template_rendering() {
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path();
 
-    // Set test environment variable
-    std::env::set_var("TEST_API_URL", "http://test.api.com");
+    // SAFETY: single-threaded test context, cleaned up below
+    unsafe { std::env::set_var("TEST_API_URL", "http://test.api.com") };
 
     // Create HTML file with template
     let template_content = r#"
@@ -151,8 +151,8 @@ async fn test_template_rendering() {
     assert!(body.contains("window.ENV = JSON.parse"));
     assert!(!body.contains("{{EscapedJson}}")); // Template should be processed
 
-    // Clean up
-    std::env::remove_var("TEST_API_URL");
+    // SAFETY: single-threaded cleanup
+    unsafe { std::env::remove_var("TEST_API_URL") };
 }
 
 #[tokio::test]
@@ -304,4 +304,98 @@ async fn test_non_compressible_with_accept_encoding() {
         "Non-compressible file should return 200 even with Accept-Encoding"
     );
     assert_eq!(response.headers().get("content-type").unwrap(), "image/png");
+}
+
+#[tokio::test]
+async fn test_head_returns_empty_body() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+
+    fs::write(
+        temp_path.join("test.html"),
+        "<html><body>Hello</body></html>",
+    )
+    .unwrap();
+
+    let _server = create_test_server(temp_path, 3010, false, false).await;
+    sleep(Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .head("http://localhost:3010/test.html")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().contains_key("content-type"));
+    assert!(response.headers().contains_key("etag"));
+
+    // HEAD should return empty body
+    let body = response.text().await.unwrap();
+    assert!(body.is_empty());
+}
+
+#[tokio::test]
+async fn test_etag_304_not_modified() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+
+    fs::write(
+        temp_path.join("test.html"),
+        "<html><body>Cached</body></html>",
+    )
+    .unwrap();
+
+    let _server = create_test_server(temp_path, 3011, false, false).await;
+    sleep(Duration::from_millis(100)).await;
+
+    // First request to get the ETag
+    let response = reqwest::get("http://localhost:3011/test.html")
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let etag = response
+        .headers()
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Second request with If-None-Match should return 304
+    let client = reqwest::Client::builder()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .build()
+        .unwrap();
+    let response = client
+        .get("http://localhost:3011/test.html")
+        .header("If-None-Match", &etag)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+}
+
+#[tokio::test]
+async fn test_method_not_allowed() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+
+    fs::write(temp_path.join("test.html"), "<html></html>").unwrap();
+
+    let _server = create_test_server(temp_path, 3012, false, false).await;
+    sleep(Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("http://localhost:3012/test.html")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
 }
