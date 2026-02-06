@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Encoding {
@@ -12,18 +12,21 @@ pub enum Encoding {
 impl Encoding {
     pub const ALL: [Self; 4] = [Self::Identity, Self::Gzip, Self::Brotli, Self::Zstd];
 
-    /// Priority: br > zstd > gzip > identity
+    /// Parse Accept-Encoding header, priority: br > zstd > gzip > identity.
+    /// Splits on comma to avoid substring false positives (e.g. "br" matching "vibrant").
     #[inline(always)]
     pub fn from_accept_encoding(accept: &str) -> Self {
-        if accept.contains("br") {
-            Self::Brotli
-        } else if accept.contains("zstd") {
-            Self::Zstd
-        } else if accept.contains("gzip") {
-            Self::Gzip
-        } else {
-            Self::Identity
+        let mut best = Self::Identity;
+        for part in accept.split(',') {
+            let token = part.split(';').next().unwrap_or("").trim();
+            match token {
+                "br" => return Self::Brotli, // highest priority, short-circuit
+                "zstd" => best = Self::Zstd,
+                "gzip" if !matches!(best, Self::Zstd) => best = Self::Gzip,
+                _ => {}
+            }
         }
+        best
     }
 }
 
@@ -36,25 +39,6 @@ pub struct ResponseBuffer {
     pub last_modified: Arc<str>,
     pub cache_control: Arc<str>,
 }
-
-// Static error responses - no allocation on error paths
-static NOT_FOUND: LazyLock<ResponseBuffer> = LazyLock::new(|| ResponseBuffer {
-    body: Bytes::from_static(b"Not Found"),
-    content_type: Arc::from("text/plain"),
-    content_encoding: None,
-    etag: Arc::from("\"404\""),
-    last_modified: Arc::from("Thu, 01 Jan 1970 00:00:00 GMT"),
-    cache_control: Arc::from("no-cache"),
-});
-
-static BAD_REQUEST: LazyLock<ResponseBuffer> = LazyLock::new(|| ResponseBuffer {
-    body: Bytes::from_static(b"Bad Request"),
-    content_type: Arc::from("text/plain"),
-    content_encoding: None,
-    etag: Arc::from("\"400\""),
-    last_modified: Arc::from("Thu, 01 Jan 1970 00:00:00 GMT"),
-    cache_control: Arc::from("no-cache"),
-});
 
 impl ResponseBuffer {
     pub fn new(
@@ -74,14 +58,47 @@ impl ResponseBuffer {
             cache_control,
         }
     }
+}
 
-    #[inline(always)]
-    pub fn not_found() -> Self {
-        NOT_FOUND.clone()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encoding_priority() {
+        assert_eq!(
+            Encoding::from_accept_encoding("gzip, br, zstd"),
+            Encoding::Brotli
+        );
+        assert_eq!(Encoding::from_accept_encoding("br"), Encoding::Brotli);
+        assert_eq!(Encoding::from_accept_encoding("gzip, zstd"), Encoding::Zstd);
+        assert_eq!(Encoding::from_accept_encoding("zstd"), Encoding::Zstd);
+        assert_eq!(Encoding::from_accept_encoding("gzip"), Encoding::Gzip);
+        assert_eq!(
+            Encoding::from_accept_encoding("deflate"),
+            Encoding::Identity
+        );
+        assert_eq!(Encoding::from_accept_encoding(""), Encoding::Identity);
     }
 
-    #[inline(always)]
-    pub fn bad_request() -> Self {
-        BAD_REQUEST.clone()
+    #[test]
+    fn test_encoding_no_substring_false_positives() {
+        assert_eq!(
+            Encoding::from_accept_encoding("vibrant"),
+            Encoding::Identity
+        );
+        assert_eq!(Encoding::from_accept_encoding("broken"), Encoding::Identity);
+    }
+
+    #[test]
+    fn test_encoding_with_quality_values() {
+        assert_eq!(
+            Encoding::from_accept_encoding("gzip;q=1.0, br;q=0.8"),
+            Encoding::Brotli
+        );
+        assert_eq!(
+            Encoding::from_accept_encoding("gzip;q=0.5, zstd;q=1.0"),
+            Encoding::Zstd
+        );
     }
 }
