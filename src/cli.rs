@@ -1,10 +1,10 @@
 use crate::init_logging;
+
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
 
 const DEFAULT_PORT: u16 = 3000;
-const VERSION: &str = include_str!("../VERSION");
 
 #[derive(Parser)]
 #[command(name = "nano-web")]
@@ -12,7 +12,7 @@ const VERSION: &str = include_str!("../VERSION");
 #[command(
     long_about = "Static file server built with Rust\nRepository: https://github.com/radiosilence/nano-web"
 )]
-#[command(version = VERSION)]
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -177,7 +177,7 @@ impl FinalServeConfig {
 }
 
 fn full_version() -> String {
-    format!("nano-web v{}", VERSION.trim())
+    format!("nano-web v{}", env!("CARGO_PKG_VERSION"))
 }
 
 fn generate_completion(shell: clap_complete::Shell) {
