@@ -4,8 +4,17 @@ use std::path::Path;
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 
+/// Bind to port 0 and let the OS assign a free port, avoiding collisions in parallel test runs.
+fn get_free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
 // Helper to create a test server
-async fn create_test_server(
+fn create_test_server(
     temp_dir: &Path,
     port: u16,
     spa_mode: bool,
@@ -37,18 +46,20 @@ async fn test_spa_mode_fallback() {
     )
     .unwrap();
 
-    // Start server with SPA mode
-    let _server = create_test_server(temp_path, 3001, true, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, true, false);
     sleep(Duration::from_millis(100)).await;
 
     // Test that existing routes work
-    let response = reqwest::get("http://localhost:3001/").await.unwrap();
+    let response = reqwest::get(format!("http://localhost:{port}/"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.text().await.unwrap();
     assert!(body.contains("SPA App"));
 
     // Test that non-existent routes fallback to index.html (SPA behavior)
-    let response = reqwest::get("http://localhost:3001/nonexistent/route")
+    let response = reqwest::get(format!("http://localhost:{port}/nonexistent/route"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -68,16 +79,18 @@ async fn test_non_spa_mode_404() {
     )
     .unwrap();
 
-    // Start server without SPA mode
-    let _server = create_test_server(temp_path, 3002, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     // Test that existing routes work
-    let response = reqwest::get("http://localhost:3002/").await.unwrap();
+    let response = reqwest::get(format!("http://localhost:{port}/"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     // Test that non-existent routes return 404
-    let response = reqwest::get("http://localhost:3002/nonexistent")
+    let response = reqwest::get(format!("http://localhost:{port}/nonexistent"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -92,12 +105,12 @@ async fn test_dev_mode_file_reloading() {
     let test_file = temp_path.join("test.html");
     fs::write(&test_file, "<html><body>Version 1</body></html>").unwrap();
 
-    // Start server with dev mode
-    let _server = create_test_server(temp_path, 3003, false, true).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, true);
     sleep(Duration::from_millis(100)).await;
 
     // Test initial content
-    let response = reqwest::get("http://localhost:3003/test.html")
+    let response = reqwest::get(format!("http://localhost:{port}/test.html"))
         .await
         .unwrap();
     let body = response.text().await.unwrap();
@@ -109,7 +122,7 @@ async fn test_dev_mode_file_reloading() {
 
     // Test updated content (dev mode should reload)
     sleep(Duration::from_millis(50)).await;
-    let response = reqwest::get("http://localhost:3003/test.html")
+    let response = reqwest::get(format!("http://localhost:{port}/test.html"))
         .await
         .unwrap();
     let body = response.text().await.unwrap();
@@ -117,6 +130,7 @@ async fn test_dev_mode_file_reloading() {
 }
 
 #[tokio::test]
+#[allow(unsafe_code)]
 async fn test_template_rendering() {
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path();
@@ -139,12 +153,14 @@ async fn test_template_rendering() {
 
     fs::write(temp_path.join("index.html"), template_content).unwrap();
 
-    // Start server
-    let _server = create_test_server(temp_path, 3004, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     // Test that template is rendered
-    let response = reqwest::get("http://localhost:3004/").await.unwrap();
+    let response = reqwest::get(format!("http://localhost:{port}/"))
+        .await
+        .unwrap();
     let body = response.text().await.unwrap();
 
     assert!(body.contains("http://test.api.com"));
@@ -160,10 +176,13 @@ async fn test_health_endpoint() {
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path();
 
-    let _server = create_test_server(temp_path, 3005, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
-    let response = reqwest::get("http://localhost:3005/_health").await.unwrap();
+    let response = reqwest::get(format!("http://localhost:{port}/_health"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     let body = response.text().await.unwrap();
@@ -179,13 +198,14 @@ async fn test_compression_headers() {
     let large_content = "x".repeat(2000);
     fs::write(temp_path.join("large.txt"), &large_content).unwrap();
 
-    let _server = create_test_server(temp_path, 3006, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     // Request with Accept-Encoding
     let client = reqwest::Client::new();
     let response = client
-        .get("http://localhost:3006/large.txt")
+        .get(format!("http://localhost:{port}/large.txt"))
         .header("Accept-Encoding", "gzip, br")
         .send()
         .await
@@ -212,10 +232,11 @@ async fn test_security_headers() {
     )
     .unwrap();
 
-    let _server = create_test_server(temp_path, 3007, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
-    let response = reqwest::get("http://localhost:3007/test.html")
+    let response = reqwest::get(format!("http://localhost:{port}/test.html"))
         .await
         .unwrap();
     let headers = response.headers();
@@ -233,28 +254,29 @@ async fn test_path_traversal_protection() {
 
     fs::write(temp_path.join("safe.txt"), "safe content").unwrap();
 
-    let _server = create_test_server(temp_path, 3008, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     // Test path traversal attempts - hidden files should be blocked (except .well-known)
     let hidden_file_paths = ["/.env", "/.secret"];
 
     for path in hidden_file_paths {
-        let url = format!("http://localhost:3008{}", path);
+        let url = format!("http://localhost:{port}{path}");
         let response = reqwest::get(&url).await.unwrap();
 
         // Should return 400 Bad Request for hidden files
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Path: {}", path);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "Path: {path}");
     }
 
     // Test that normal path traversal (which gets normalized by HTTP stack) returns 404
     let normalized_paths = ["/../../../etc/passwd"];
     for path in normalized_paths {
-        let url = format!("http://localhost:3008{}", path);
+        let url = format!("http://localhost:{port}{path}");
         let response = reqwest::get(&url).await.unwrap();
 
         // These get normalized by HTTP stack and just return 404 (not found)
-        assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {}", path);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {path}");
     }
 
     // Test that .well-known paths are allowed (but return 404 if file doesn't exist)
@@ -263,15 +285,15 @@ async fn test_path_traversal_protection() {
         "/.well-known/acme-challenge/token",
     ];
     for path in wellknown_paths {
-        let url = format!("http://localhost:3008{}", path);
+        let url = format!("http://localhost:{port}{path}");
         let response = reqwest::get(&url).await.unwrap();
 
         // Should return 404 (not found) not 400 (bad request) - meaning path validation passed
-        assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {}", path);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "Path: {path}");
     }
 
     // But safe paths should work
-    let response = reqwest::get("http://localhost:3008/safe.txt")
+    let response = reqwest::get(format!("http://localhost:{port}/safe.txt"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -286,13 +308,14 @@ async fn test_non_compressible_with_accept_encoding() {
     let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     fs::write(temp_path.join("image.png"), png_header).unwrap();
 
-    let _server = create_test_server(temp_path, 3009, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     // Request with Accept-Encoding header (like browsers do)
     let client = reqwest::Client::new();
     let response = client
-        .get("http://localhost:3009/image.png")
+        .get(format!("http://localhost:{port}/image.png"))
         .header("Accept-Encoding", "gzip, deflate, br, zstd")
         .send()
         .await
@@ -317,12 +340,13 @@ async fn test_head_returns_empty_body() {
     )
     .unwrap();
 
-    let _server = create_test_server(temp_path, 3010, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     let client = reqwest::Client::new();
     let response = client
-        .head("http://localhost:3010/test.html")
+        .head(format!("http://localhost:{port}/test.html"))
         .send()
         .await
         .unwrap();
@@ -347,11 +371,12 @@ async fn test_etag_304_not_modified() {
     )
     .unwrap();
 
-    let _server = create_test_server(temp_path, 3011, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     // First request to get the ETag
-    let response = reqwest::get("http://localhost:3011/test.html")
+    let response = reqwest::get(format!("http://localhost:{port}/test.html"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -371,7 +396,7 @@ async fn test_etag_304_not_modified() {
         .build()
         .unwrap();
     let response = client
-        .get("http://localhost:3011/test.html")
+        .get(format!("http://localhost:{port}/test.html"))
         .header("If-None-Match", &etag)
         .send()
         .await
@@ -387,15 +412,134 @@ async fn test_method_not_allowed() {
 
     fs::write(temp_path.join("test.html"), "<html></html>").unwrap();
 
-    let _server = create_test_server(temp_path, 3012, false, false).await;
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
     sleep(Duration::from_millis(100)).await;
 
     let client = reqwest::Client::new();
     let response = client
-        .post("http://localhost:3012/test.html")
+        .post(format!("http://localhost:{port}/test.html"))
         .send()
         .await
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn test_new_security_headers() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+    fs::write(
+        temp_path.join("test.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
+    sleep(Duration::from_millis(100)).await;
+
+    let response = reqwest::get(format!("http://localhost:{port}/test.html"))
+        .await
+        .unwrap();
+    let headers = response.headers();
+
+    assert_eq!(
+        headers.get("strict-transport-security").unwrap(),
+        "max-age=63072000; includeSubDomains"
+    );
+    assert_eq!(
+        headers.get("permissions-policy").unwrap(),
+        "camera=(), microphone=(), geolocation=()"
+    );
+    assert_eq!(headers.get("x-dns-prefetch-control").unwrap(), "off");
+}
+
+#[tokio::test]
+async fn test_vary_header_on_compressed() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+    let large_content = "x".repeat(2000);
+    fs::write(temp_path.join("large.txt"), &large_content).unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
+    sleep(Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(format!("http://localhost:{port}/large.txt"))
+        .header("Accept-Encoding", "gzip, br")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.headers().get("vary").unwrap(), "Accept-Encoding");
+}
+
+#[tokio::test]
+async fn test_content_length_header() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+    let content = "Hello, World!";
+    fs::write(temp_path.join("hello.txt"), content).unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
+    sleep(Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::builder()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .build()
+        .unwrap();
+    let response = client
+        .get(format!("http://localhost:{port}/hello.txt"))
+        .send()
+        .await
+        .unwrap();
+
+    assert!(response.headers().contains_key("content-length"));
+}
+
+#[tokio::test]
+async fn test_cache_control_values() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_path = temp_dir.path();
+    fs::write(temp_path.join("page.html"), "<html></html>").unwrap();
+    fs::write(temp_path.join("style.css"), "body{}").unwrap();
+    fs::write(temp_path.join("data.json"), "{}").unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server(temp_path, port, false, false);
+    sleep(Duration::from_millis(100)).await;
+
+    // HTML: 15 minutes
+    let resp = reqwest::get(format!("http://localhost:{port}/page.html"))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.headers().get("cache-control").unwrap(),
+        "public, max-age=900"
+    );
+
+    // CSS: 1 year immutable (asset)
+    let resp = reqwest::get(format!("http://localhost:{port}/style.css"))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.headers().get("cache-control").unwrap(),
+        "public, max-age=31536000, immutable"
+    );
+
+    // JSON: 1 hour (other)
+    let resp = reqwest::get(format!("http://localhost:{port}/data.json"))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.headers().get("cache-control").unwrap(),
+        "public, max-age=3600"
+    );
 }

@@ -4,7 +4,7 @@ use crate::response_buffer::{Encoding, ResponseBuffer};
 use crate::template::render_template;
 use anyhow::Result;
 use dashmap::DashMap;
-use fxhash::FxBuildHasher;
+use foldhash::quality::RandomState;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use std::time::SystemTime;
 use tracing::{debug, error, info};
 use walkdir::WalkDir;
 
-type RouteMap = DashMap<Arc<str>, ResponseBuffer, FxBuildHasher>;
+type RouteMap = DashMap<Arc<str>, ResponseBuffer, RandomState>;
 
 #[derive(Debug, Clone)]
 struct CachedRoute {
@@ -21,7 +21,7 @@ struct CachedRoute {
     modified: SystemTime,
 }
 
-type CachedRoutes = DashMap<Arc<str>, CachedRoute, FxBuildHasher>;
+type CachedRoutes = DashMap<Arc<str>, CachedRoute, RandomState>;
 
 /// Pre-baked responses per encoding. Separate maps enable &str lookup against Arc<str> keys.
 struct ResponseCache {
@@ -34,14 +34,14 @@ struct ResponseCache {
 impl ResponseCache {
     fn new() -> Self {
         Self {
-            identity: DashMap::with_hasher(FxBuildHasher::default()),
-            gzip: DashMap::with_hasher(FxBuildHasher::default()),
-            brotli: DashMap::with_hasher(FxBuildHasher::default()),
-            zstd: DashMap::with_hasher(FxBuildHasher::default()),
+            identity: DashMap::with_hasher(RandomState::default()),
+            gzip: DashMap::with_hasher(RandomState::default()),
+            brotli: DashMap::with_hasher(RandomState::default()),
+            zstd: DashMap::with_hasher(RandomState::default()),
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_map(&self, encoding: Encoding) -> &RouteMap {
         match encoding {
             Encoding::Identity => &self.identity,
@@ -51,7 +51,7 @@ impl ResponseCache {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn get(&self, path: &str, encoding: Encoding) -> Option<ResponseBuffer> {
         // Try requested encoding first, fallback to identity for non-compressible files
         self.get_map(encoding)
@@ -79,7 +79,7 @@ impl Default for NanoWeb {
 impl NanoWeb {
     pub fn new() -> Self {
         Self {
-            routes: DashMap::with_hasher(FxBuildHasher::default()),
+            routes: DashMap::with_hasher(RandomState::default()),
             responses: ResponseCache::new(),
         }
     }
@@ -88,7 +88,7 @@ impl NanoWeb {
         self.routes.len()
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn get_response(&self, path: &str, accept_encoding: &str) -> Option<ResponseBuffer> {
         let encoding = Encoding::from_accept_encoding(accept_encoding);
         self.responses.get(path, encoding)
@@ -132,7 +132,7 @@ impl NanoWeb {
                     Arc::from("/")
                 } else {
                     let dir = url_path.trim_end_matches("/index.html");
-                    Arc::from(format!("{}/", dir).as_str())
+                    Arc::from(format!("{dir}/").as_str())
                 };
                 self.routes.insert(dir_path.clone(), route.clone());
 
@@ -196,7 +196,7 @@ impl NanoWeb {
             url_path.clone(),
             Encoding::Identity,
             ResponseBuffer::new(
-                route.content.plain.to_vec(),
+                route.content.plain.clone(),
                 ct.clone(),
                 None,
                 etag.clone(),
@@ -210,7 +210,7 @@ impl NanoWeb {
                 url_path.clone(),
                 Encoding::Gzip,
                 ResponseBuffer::new(
-                    data.to_vec(),
+                    data.clone(),
                     ct.clone(),
                     Some("gzip"),
                     etag.clone(),
@@ -225,7 +225,7 @@ impl NanoWeb {
                 url_path.clone(),
                 Encoding::Brotli,
                 ResponseBuffer::new(
-                    data.to_vec(),
+                    data.clone(),
                     ct.clone(),
                     Some("br"),
                     etag.clone(),
@@ -240,7 +240,7 @@ impl NanoWeb {
                 url_path.clone(),
                 Encoding::Zstd,
                 ResponseBuffer::new(
-                    data.to_vec(),
+                    data.clone(),
                     ct.clone(),
                     Some("zstd"),
                     etag.clone(),
@@ -269,12 +269,9 @@ impl NanoWeb {
     }
 
     fn format_http_date(time: SystemTime) -> String {
-        let datetime = chrono::DateTime::<chrono::Utc>::from(time);
-        datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+        httpdate::fmt_http_date(time)
     }
-}
 
-impl NanoWeb {
     /// Dev mode: refresh route if file changed on disk
     pub fn refresh_if_modified(
         &self,
