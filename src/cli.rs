@@ -122,16 +122,15 @@ impl Cli {
                 // Initialize logging with final values
                 init_logging(&final_log_level, &final_log_format);
 
-                let final_config = FinalServeConfig {
+                crate::server::start_server(crate::server::ServeConfig {
                     public_dir: serve_dir,
                     port: port.unwrap_or(self.port),
                     dev: dev || self.dev,
                     spa_mode: spa || self.spa,
                     config_prefix: config_prefix.unwrap_or(self.config_prefix),
                     log_requests: log_requests || self.log_requests,
-                };
-
-                final_config.serve().await
+                })
+                .await
             }
             Some(Commands::Version) => {
                 println!("{}", full_version());
@@ -150,29 +149,6 @@ impl Cli {
                 Ok(())
             }
         }
-    }
-}
-
-struct FinalServeConfig {
-    public_dir: PathBuf,
-    port: u16,
-    dev: bool,
-    spa_mode: bool,
-    config_prefix: String,
-    log_requests: bool,
-}
-
-impl FinalServeConfig {
-    async fn serve(self) -> Result<()> {
-        let config = crate::server::ServeConfig {
-            public_dir: self.public_dir,
-            port: self.port,
-            dev: self.dev,
-            spa_mode: self.spa_mode,
-            config_prefix: self.config_prefix,
-            log_requests: self.log_requests,
-        };
-        crate::server::start_server(config).await
     }
 }
 

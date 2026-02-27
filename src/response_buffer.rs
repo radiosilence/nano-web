@@ -14,7 +14,7 @@ impl Encoding {
 
     /// Parse Accept-Encoding header, priority: br > zstd > gzip > identity.
     /// Splits on comma to avoid substring false positives (e.g. "br" matching "vibrant").
-    #[inline(always)]
+    #[inline]
     pub fn from_accept_encoding(accept: &str) -> Self {
         let mut best = Self::Identity;
         for part in accept.split(',') {
@@ -42,7 +42,7 @@ pub struct ResponseBuffer {
 
 impl ResponseBuffer {
     pub fn new(
-        body: Vec<u8>,
+        body: Bytes,
         content_type: Arc<str>,
         content_encoding: Option<&'static str>,
         etag: Arc<str>,
@@ -50,7 +50,7 @@ impl ResponseBuffer {
         cache_control: Arc<str>,
     ) -> Self {
         Self {
-            body: Bytes::from(body),
+            body,
             content_type,
             content_encoding,
             etag,

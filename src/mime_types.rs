@@ -25,82 +25,30 @@ impl MimeConfig {
 pub fn get_mime_config<P: AsRef<Path>>(path: P) -> MimeConfig {
     let mime = MimeGuess::from_path(path)
         .first()
-        .map(|m| m.to_string())
-        .unwrap_or_else(|| DEFAULT_MIME.to_string());
+        .map_or_else(|| DEFAULT_MIME.to_string(), |m| m.to_string());
 
     MimeConfig::new(mime)
 }
 
 pub fn is_compressible(mime_type: &str) -> bool {
-    match mime_type {
-        // Text-based formats
+    matches!(
+        mime_type,
         "text/html"
-        | "text/css"
-        | "text/javascript"
-        | "text/plain"
-        | "text/csv"
-        | "text/markdown"
-        | "text/cache-manifest"
-        | "application/json"
-        | "application/ld+json"
-        | "application/manifest+json"
-        | "text/xml"
-        | "application/xml"
-        | "application/rss+xml"
-        | "application/atom+xml"
-        | "image/svg+xml" => true,
-
-        // Already compressed or binary
-        "image/jpeg"
-        | "image/png"
-        | "image/gif"
-        | "image/webp"
-        | "image/avif"
-        | "image/heic"
-        | "image/heif"
-        | "image/bmp"
-        | "image/tiff"
-        | "image/x-icon"
-        | "audio/mpeg"
-        | "audio/mp4"
-        | "audio/aac"
-        | "audio/ogg"
-        | "audio/flac"
-        | "audio/opus"
-        | "audio/wav"
-        | "video/mp4"
-        | "video/webm"
-        | "video/x-msvideo"
-        | "video/quicktime"
-        | "video/x-ms-wmv"
-        | "video/x-flv"
-        | "video/x-matroska"
-        | "font/woff"
-        | "font/woff2"
-        | "font/ttf"
-        | "font/otf"
-        | "application/vnd.ms-fontobject"
-        | "application/zip"
-        | "application/gzip"
-        | "application/x-bzip2"
-        | "application/vnd.rar"
-        | "application/x-7z-compressed"
-        | "application/x-xz"
-        | "application/x-tar"
-        | "application/pdf"
-        | "application/msword"
-        | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        | "application/vnd.ms-excel"
-        | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        | "application/vnd.ms-powerpoint"
-        | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        | "application/vnd.oasis.opendocument.text"
-        | "application/vnd.oasis.opendocument.spreadsheet"
-        | "application/vnd.oasis.opendocument.presentation"
-        | "application/octet-stream" => false,
-
-        _ => false,
-    }
+            | "text/css"
+            | "text/javascript"
+            | "text/plain"
+            | "text/csv"
+            | "text/markdown"
+            | "text/cache-manifest"
+            | "application/json"
+            | "application/ld+json"
+            | "application/manifest+json"
+            | "text/xml"
+            | "application/xml"
+            | "application/rss+xml"
+            | "application/atom+xml"
+            | "image/svg+xml"
+    )
 }
 
 pub fn is_templatable(mime_type: &str) -> bool {
