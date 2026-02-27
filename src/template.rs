@@ -27,10 +27,11 @@ pub fn render_template(content: &str, config_prefix: &str) -> Result<String> {
             Json => json_string,
             EscapedJson => escaped_json
         })
-        .map_err(|e| anyhow::anyhow!("Template rendering error: {}", e))
+        .map_err(|e| anyhow::anyhow!("Template rendering error: {e}"))
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
     use std::env;
@@ -70,11 +71,11 @@ mod tests {
 
     #[test]
     fn test_template_with_no_env_vars() {
-        let template = r#"
+        let template = r"
         <script>
             window.ENV = {{Json}};
         </script>
-        "#;
+        ";
 
         let result = render_template(template, "NONEXISTENT_").unwrap();
         assert!(result.contains("{}"));
