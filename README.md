@@ -12,7 +12,7 @@ Static file server. Pre-loads and pre-compresses all files at startup for near-z
 - Raw hyper (no framework overhead)
 - SO_REUSEPORT for multi-core scaling
 - Files pre-compressed at startup (brotli/gzip/zstd)
-- Lock-free concurrent routing (DashMap + FxHash)
+- Lock-free concurrent routing (DashMap + foldhash)
 - Zero-copy responses (Bytes)
 
 Benchmark (M3 Max):
@@ -77,6 +77,10 @@ Variables: `{{env.VAR_NAME}}`, `{{Json}}`, `{{EscapedJson}}`
 ## Caching
 
 ETag and `If-None-Match` supported - returns 304 Not Modified when content hasn't changed.
+
+## Security Headers
+
+All responses include: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Strict-Transport-Security`, `Permissions-Policy`, `X-DNS-Prefetch-Control`. Compressed responses include `Vary: Accept-Encoding`.
 
 ## Health Check
 

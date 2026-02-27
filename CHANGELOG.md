@@ -5,6 +5,32 @@ All notable changes to nano-web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0]
+
+### Changed
+
+- Zero-copy response buffers — `ResponseBuffer` now accepts `Bytes` directly, eliminating redundant `.to_vec()` copies on every compressed response
+- Replaced `fxhash` with `foldhash` — same perf, actively maintained by the same author
+- Replaced `chrono` with `httpdate` — `chrono` was overkill for HTTP date formatting, `httpdate` is purpose-built and tiny. **Note:** `/_health` timestamp format changed from RFC 3339 to HTTP-date
+- Removed redundant `FinalServeConfig` intermediate type in CLI
+- Replaced `#[inline(always)]` with `#[inline]` — let the compiler decide rather than forcing it
+- Strict clippy pedantic lints enabled via `[lints.clippy]` in `Cargo.toml`
+- `is_compressible()` simplified from match-with-identical-arms to `matches!` macro
+- `handle_request` no longer needlessly `async` — sync function returning `Result` is sufficient for hyper's `service_fn`
+
+### Added
+
+- Security headers: `Strict-Transport-Security`, `Permissions-Policy`, `X-DNS-Prefetch-Control`
+- `Vary: Accept-Encoding` header on compressed responses (correct HTTP caching semantics)
+- `Content-Length` header on all responses
+- MSRV 1.75 declared in `Cargo.toml`
+- Integration tests for new security headers, cache-control values, content-length, vary header
+- Dynamic port allocation in tests (no more hardcoded port conflicts)
+
+### Fixed
+
+- Pedantic clippy warnings: uninlined format args, `map`/`unwrap_or_else` patterns, match-for-single-pattern, doc backticks
+
 ## [1.2.0]
 
 ### Fixed

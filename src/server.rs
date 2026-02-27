@@ -29,7 +29,7 @@ struct AppState {
     config: ServeConfig,
 }
 
-/// Create a TCP listener with SO_REUSEPORT for better multi-core scaling
+/// Create a TCP listener with `SO_REUSEPORT` for better multi-core scaling
 fn create_reuse_port_listener(addr: SocketAddr) -> Result<std::net::TcpListener> {
     let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
     socket.set_reuse_address(true)?;
@@ -67,7 +67,7 @@ pub async fn start_server(config: ServeConfig) -> Result<()> {
         tokio::spawn(async move {
             let service = service_fn(move |req| {
                 let state = state.clone();
-                async move { handle_request(req, state).await }
+                async move { handle_request(req, state) }
             });
 
             if let Err(e) = http1::Builder::new()
@@ -84,7 +84,8 @@ pub async fn start_server(config: ServeConfig) -> Result<()> {
 
 type HyperResponse = Response<Full<Bytes>>;
 
-async fn handle_request(
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+fn handle_request(
     req: Request<hyper::body::Incoming>,
     state: Arc<AppState>,
 ) -> Result<HyperResponse, std::convert::Infallible> {
@@ -103,7 +104,7 @@ async fn handle_request(
     if path == "/_health" {
         let body = format!(
             r#"{{"status":"ok","timestamp":"{}"}}"#,
-            chrono::Utc::now().to_rfc3339()
+            httpdate::fmt_http_date(std::time::SystemTime::now())
         );
         return Ok(Response::builder()
             .status(StatusCode::OK)
@@ -142,7 +143,7 @@ async fn handle_request(
 
     // Try with trailing slash
     if buf.is_none() && !path.ends_with('/') {
-        let with_slash = format!("{}/", path);
+        let with_slash = format!("{path}/");
         buf = state.server.get_response(&with_slash, accept_encoding);
     }
 
@@ -152,25 +153,22 @@ async fn handle_request(
         buf = state.server.get_response("/", accept_encoding);
     }
 
-    let resp = match buf {
-        Some(ref b) => {
-            // ETag conditional: return 304 if client already has this version
-            if let Some(etag) = if_none_match {
-                if etag == b.etag.as_ref() {
-                    return Ok(Response::builder()
-                        .status(StatusCode::NOT_MODIFIED)
-                        .header("etag", b.etag.as_ref())
-                        .header("cache-control", b.cache_control.as_ref())
-                        .body(Full::new(Bytes::new()))
-                        .unwrap());
-                }
+    let resp = if let Some(ref b) = buf {
+        // ETag conditional: return 304 if client already has this version
+        if let Some(etag) = if_none_match {
+            if etag == b.etag.as_ref() {
+                return Ok(Response::builder()
+                    .status(StatusCode::NOT_MODIFIED)
+                    .header("etag", b.etag.as_ref())
+                    .header("cache-control", b.cache_control.as_ref())
+                    .body(Full::new(Bytes::new()))
+                    .unwrap());
             }
-            build_response(b, is_head)
         }
-        None => {
-            debug!("Route not found: {}", path);
-            response(StatusCode::NOT_FOUND, "Not Found")
-        }
+        build_response(b, is_head)
+    } else {
+        debug!("Route not found: {path}");
+        response(StatusCode::NOT_FOUND, "Not Found")
     };
 
     if state.config.log_requests {
@@ -185,7 +183,7 @@ async fn handle_request(
     Ok(resp)
 }
 
-#[inline(always)]
+#[inline]
 fn response(status: StatusCode, body: &'static str) -> HyperResponse {
     Response::builder()
         .status(status)
@@ -193,7 +191,7 @@ fn response(status: StatusCode, body: &'static str) -> HyperResponse {
         .unwrap()
 }
 
-#[inline(always)]
+#[inline]
 fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool) -> HyperResponse {
     let mut builder = Response::builder()
         .status(StatusCode::OK)
@@ -203,11 +201,27 @@ fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool)
         .header("cache-control", buf.cache_control.as_ref())
         .header("x-content-type-options", "nosniff")
         .header("x-frame-options", "SAMEORIGIN")
-        .header("referrer-policy", "strict-origin-when-cross-origin");
+        .header("referrer-policy", "strict-origin-when-cross-origin")
+        .header(
+            "strict-transport-security",
+            "max-age=63072000; includeSubDomains",
+        )
+        .header(
+            "permissions-policy",
+            "camera=(), microphone=(), geolocation=()",
+        )
+        .header("x-dns-prefetch-control", "off");
 
     if let Some(encoding) = buf.content_encoding {
         builder = builder.header("content-encoding", encoding);
     }
+
+    if buf.content_encoding.is_some() {
+        builder = builder.header("vary", "Accept-Encoding");
+    }
+
+    // Content-Length reflects the real body size even for HEAD (RFC 9110 §9.3.2)
+    builder = builder.header("content-length", buf.body.len());
 
     let body = if head_only {
         Bytes::new()
