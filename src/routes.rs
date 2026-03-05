@@ -4,7 +4,7 @@ use crate::response_buffer::{Encoding, ResponseBuffer};
 use crate::template::render_template;
 use anyhow::Result;
 use dashmap::DashMap;
-use foldhash::quality::RandomState;
+use fxhash::FxBuildHasher;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use std::time::SystemTime;
 use tracing::{debug, error, info};
 use walkdir::WalkDir;
 
-type RouteMap = DashMap<Arc<str>, ResponseBuffer, RandomState>;
+type RouteMap = DashMap<Arc<str>, ResponseBuffer, FxBuildHasher>;
 
 #[derive(Debug, Clone)]
 struct CachedRoute {
@@ -21,7 +21,7 @@ struct CachedRoute {
     modified: SystemTime,
 }
 
-type CachedRoutes = DashMap<Arc<str>, CachedRoute, RandomState>;
+type CachedRoutes = DashMap<Arc<str>, CachedRoute, FxBuildHasher>;
 
 /// Pre-baked responses per encoding. Separate maps enable &str lookup against Arc<str> keys.
 struct ResponseCache {
@@ -34,14 +34,14 @@ struct ResponseCache {
 impl ResponseCache {
     fn new() -> Self {
         Self {
-            identity: DashMap::with_hasher(RandomState::default()),
-            gzip: DashMap::with_hasher(RandomState::default()),
-            brotli: DashMap::with_hasher(RandomState::default()),
-            zstd: DashMap::with_hasher(RandomState::default()),
+            identity: DashMap::with_hasher(FxBuildHasher::default()),
+            gzip: DashMap::with_hasher(FxBuildHasher::default()),
+            brotli: DashMap::with_hasher(FxBuildHasher::default()),
+            zstd: DashMap::with_hasher(FxBuildHasher::default()),
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn get_map(&self, encoding: Encoding) -> &RouteMap {
         match encoding {
             Encoding::Identity => &self.identity,
@@ -51,7 +51,7 @@ impl ResponseCache {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn get(&self, path: &str, encoding: Encoding) -> Option<ResponseBuffer> {
         // Try requested encoding first, fallback to identity for non-compressible files
         self.get_map(encoding)
@@ -79,7 +79,7 @@ impl Default for NanoWeb {
 impl NanoWeb {
     pub fn new() -> Self {
         Self {
-            routes: DashMap::with_hasher(RandomState::default()),
+            routes: DashMap::with_hasher(FxBuildHasher::default()),
             responses: ResponseCache::new(),
         }
     }
@@ -88,7 +88,7 @@ impl NanoWeb {
         self.routes.len()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_response(&self, path: &str, accept_encoding: &str) -> Option<ResponseBuffer> {
         let encoding = Encoding::from_accept_encoding(accept_encoding);
         self.responses.get(path, encoding)
