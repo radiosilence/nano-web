@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bytes::Bytes;
 use http_body_util::Full;
+use hyper::header::{self, HeaderName, HeaderValue};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
@@ -183,7 +184,7 @@ fn handle_request(
     Ok(resp)
 }
 
-#[inline]
+#[inline(always)]
 fn response(status: StatusCode, body: &'static str) -> HyperResponse {
     Response::builder()
         .status(status)
@@ -191,37 +192,46 @@ fn response(status: StatusCode, body: &'static str) -> HyperResponse {
         .unwrap()
 }
 
-#[inline]
+#[inline(always)]
 fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool) -> HyperResponse {
     let mut builder = Response::builder()
         .status(StatusCode::OK)
-        .header("content-type", buf.content_type.as_ref())
-        .header("etag", buf.etag.as_ref())
-        .header("last-modified", buf.last_modified.as_ref())
-        .header("cache-control", buf.cache_control.as_ref())
-        .header("x-content-type-options", "nosniff")
-        .header("x-frame-options", "SAMEORIGIN")
-        .header("referrer-policy", "strict-origin-when-cross-origin")
+        .header(header::CONTENT_TYPE, buf.content_type.as_ref())
+        .header(header::ETAG, buf.etag.as_ref())
+        .header(header::LAST_MODIFIED, buf.last_modified.as_ref())
+        .header(header::CACHE_CONTROL, buf.cache_control.as_ref())
+        // Pre-computed at route creation to avoid per-request integer→string alloc
+        .header(header::CONTENT_LENGTH, buf.content_length.as_ref())
         .header(
-            "strict-transport-security",
-            "max-age=63072000; includeSubDomains",
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
         )
         .header(
-            "permissions-policy",
-            "camera=(), microphone=(), geolocation=()",
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("SAMEORIGIN"),
         )
-        .header("x-dns-prefetch-control", "off");
+        .header(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        )
+        .header(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        )
+        .header(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+        )
+        .header(
+            HeaderName::from_static("x-dns-prefetch-control"),
+            HeaderValue::from_static("off"),
+        );
 
     if let Some(encoding) = buf.content_encoding {
-        builder = builder.header("content-encoding", encoding);
+        builder = builder
+            .header(header::CONTENT_ENCODING, HeaderValue::from_static(encoding))
+            .header(header::VARY, HeaderValue::from_static("Accept-Encoding"));
     }
-
-    if buf.content_encoding.is_some() {
-        builder = builder.header("vary", "Accept-Encoding");
-    }
-
-    // Content-Length reflects the real body size even for HEAD (RFC 9110 §9.3.2)
-    builder = builder.header("content-length", buf.body.len());
 
     let body = if head_only {
         Bytes::new()

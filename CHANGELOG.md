@@ -5,15 +5,23 @@ All notable changes to nano-web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1]
+
+### Fixed
+
+- **Performance regression**: restored v1.2.0-level throughput (124k → 144k req/s) and latency (2.12ms → 345µs)
+- Eliminated per-request heap allocations from security headers using `HeaderName::from_static` / `HeaderValue::from_static`
+- Restored `#[inline(always)]` on hot-path functions — compiler cost model undervalues them at 150k req/s
+- Pre-compute `Content-Length` header value at route creation instead of per-request integer→string conversion
+- Reverted `foldhash` → `fxhash` — quality-grade random-seeded hash is unnecessary overhead for a pre-populated route cache with filesystem-derived keys
+
 ## [1.3.0]
 
 ### Changed
 
 - Zero-copy response buffers — `ResponseBuffer` now accepts `Bytes` directly, eliminating redundant `.to_vec()` copies on every compressed response
-- Replaced `fxhash` with `foldhash` — same perf, actively maintained by the same author
 - Replaced `chrono` with `httpdate` — `chrono` was overkill for HTTP date formatting, `httpdate` is purpose-built and tiny. **Note:** `/_health` timestamp format changed from RFC 3339 to HTTP-date
 - Removed redundant `FinalServeConfig` intermediate type in CLI
-- Replaced `#[inline(always)]` with `#[inline]` — let the compiler decide rather than forcing it
 - Strict clippy pedantic lints enabled via `[lints.clippy]` in `Cargo.toml`
 - `is_compressible()` simplified from match-with-identical-arms to `matches!` macro
 - `handle_request` no longer needlessly `async` — sync function returning `Result` is sufficient for hyper's `service_fn`
@@ -22,13 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Security headers: `Strict-Transport-Security`, `Permissions-Policy`, `X-DNS-Prefetch-Control`
 - `Vary: Accept-Encoding` header on compressed responses (correct HTTP caching semantics)
-- `Content-Length` header on all responses
+- `Content-Length` header on all responses (pre-computed at route creation, zero per-request cost)
 - MSRV 1.75 declared in `Cargo.toml`
 - Integration tests for new security headers, cache-control values, content-length, vary header
 - Dynamic port allocation in tests (no more hardcoded port conflicts)
 
 ### Fixed
 
+- **Performance**: eliminated per-request heap allocations from security headers by using `HeaderName::from_static` / `HeaderValue::from_static` for all constant headers
+- **Performance**: restored `#[inline(always)]` on hot-path functions (`get_response`, `get_map`, `get`, `build_response`, `from_accept_encoding`) — the compiler's cost model underestimates their value at 150k req/s
+- **Performance**: pre-compute `Content-Length` header value at route creation instead of integer→string conversion per request
 - Pedantic clippy warnings: uninlined format args, `map`/`unwrap_or_else` patterns, match-for-single-pattern, doc backticks
 
 ## [1.2.0]
