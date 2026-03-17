@@ -292,7 +292,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-binaries, check-version, publish-crate]
+    needs: [build-binaries, check-version]
     if: needs.check-version.outputs.should_release == 'true'
     permissions:
       contents: write
