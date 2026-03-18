@@ -8,3 +8,11 @@ pre-push:
   commands:
     clippy:
       run: cargo clippy --all-targets --all-features -- -D warnings
+    lockfile:
+      run: |
+        cargo generate-lockfile
+        if ! git diff --exit-code --quiet Cargo.lock; then
+          git add Cargo.lock
+          echo "Cargo.lock updated and staged. Please commit and push again."
+          exit 1
+        fi
