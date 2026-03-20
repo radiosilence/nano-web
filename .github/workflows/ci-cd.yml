@@ -297,12 +297,12 @@ jobs:
           mkdir -p public
           echo "<html><body>Hello nano-web!</body></html>" > public/index.html
 
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
 
           docker run -d --name test-nano-web \
             -p 3000:3000 \
             -v $(pwd)/public:/public \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
 
           sleep 5
 
