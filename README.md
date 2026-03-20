@@ -1,7 +1,6 @@
 # nano-web
 
-![CI](https://github.com/radiosilence/nano-web/actions/workflows/ci.yml/badge.svg)
-![Build](https://github.com/radiosilence/nano-web/actions/workflows/build.yml/badge.svg)
+![CI](https://github.com/radiosilence/nano-web/actions/workflows/ci-cd.yml/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/nano-web.svg)](https://crates.io/crates/nano-web)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
