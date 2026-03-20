@@ -70,23 +70,21 @@ jobs:
       major_minor: ${{ steps.check.outputs.major_minor }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Check if version changed
         id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get current version from Cargo.toml
           CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "Current version: $CURRENT_VERSION"
 
-          # Get latest git tag
-          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1 || echo "")
-          LATEST_VERSION=${LATEST_TAG#v}
-          echo "Latest tag version: $LATEST_VERSION"
+          # Use GitHub releases API — tags are output-only, not input
+          LATEST_RELEASE=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+          LATEST_VERSION=${LATEST_RELEASE#v}
+          echo "Latest release: $LATEST_VERSION"
 
-          # Check if version is newer
-          if [ -z "$LATEST_TAG" ] || [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+          if [ -z "$LATEST_RELEASE" ] || [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
             echo "Version changed: $LATEST_VERSION -> $CURRENT_VERSION"
             echo "should_release=true" >> $GITHUB_OUTPUT
           else
