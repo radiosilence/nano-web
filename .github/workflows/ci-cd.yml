@@ -212,9 +212,10 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
   create-manifest:
-    name: Create Multi-Arch Manifest
+    name: Push Docker Image
     runs-on: ubuntu-latest
     needs: [test, lint, format, build-image, check-version]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -226,38 +227,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push manifests
+      - name: Push latest manifest
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
+
+      - name: Push version manifests
+        if: needs.check-version.outputs.should_release == 'true'
         run: |
           VERSION="${{ needs.check-version.outputs.version }}"
           MAJOR="${{ needs.check-version.outputs.major }}"
           MAJOR_MINOR="${{ needs.check-version.outputs.major_minor }}"
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
 
-          # Create latest manifest
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
-
-          # Create version manifest
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
 
-          # Create major.minor manifest
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${MAJOR_MINOR} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
 
-          # Create major manifest
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${MAJOR} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
 
-          # Create commit SHA manifest
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
@@ -283,6 +282,7 @@ jobs:
     name: Quick Docker Test
     runs-on: ubuntu-latest
     needs: [create-manifest, check-version]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Test Docker image
         run: |
