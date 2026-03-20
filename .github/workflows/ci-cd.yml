@@ -314,7 +314,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [test, lint, format, build-binaries, check-version]
+    needs: [test, lint, format, build-binaries, check-version, quick-test]
     if: needs.check-version.outputs.should_release == 'true'
     permissions:
       contents: write
