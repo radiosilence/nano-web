@@ -36,6 +36,7 @@ pub fn is_compressible(mime_type: &str) -> bool {
         "text/html"
             | "text/css"
             | "text/javascript"
+            | "application/javascript"
             | "text/plain"
             | "text/csv"
             | "text/markdown"
@@ -58,7 +59,7 @@ pub fn is_templatable(mime_type: &str) -> bool {
 pub fn is_asset(mime_type: &str) -> bool {
     match mime_type {
         // CSS and JavaScript
-        "text/css" | "text/javascript" => true,
+        "text/css" | "text/javascript" | "application/javascript" => true,
 
         // Images
         m if m.starts_with("image/") => true,

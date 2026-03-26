@@ -14,11 +14,24 @@ impl Encoding {
 
     /// Parse Accept-Encoding header, priority: br > zstd > gzip > identity.
     /// Splits on comma to avoid substring false positives (e.g. "br" matching "vibrant").
-    #[inline(always)]
+    /// Respects q=0 (encoding explicitly rejected by client).
     pub fn from_accept_encoding(accept: &str) -> Self {
         let mut best = Self::Identity;
         for part in accept.split(',') {
-            let token = part.split(';').next().unwrap_or("").trim();
+            let mut segments = part.split(';');
+            let token = segments.next().unwrap_or("").trim();
+
+            // q=0 means the encoding is explicitly rejected
+            let rejected = segments.any(|s| {
+                s.trim()
+                    .strip_prefix("q=")
+                    .and_then(|v| v.trim().parse::<f32>().ok())
+                    .is_some_and(|q| q == 0.0)
+            });
+            if rejected {
+                continue;
+            }
+
             match token {
                 "br" => return Self::Brotli, // highest priority, short-circuit
                 "zstd" => best = Self::Zstd,
@@ -39,6 +52,8 @@ pub struct ResponseBuffer {
     pub last_modified: Arc<str>,
     pub cache_control: Arc<str>,
     pub content_length: Arc<str>,
+    /// Whether Vary: Accept-Encoding should be sent (true for all compressible types)
+    pub vary_encoding: bool,
 }
 
 impl ResponseBuffer {
@@ -49,6 +64,7 @@ impl ResponseBuffer {
         etag: Arc<str>,
         last_modified: Arc<str>,
         cache_control: Arc<str>,
+        vary_encoding: bool,
     ) -> Self {
         let content_length: Arc<str> = Arc::from(body.len().to_string().as_str());
         Self {
@@ -59,6 +75,7 @@ impl ResponseBuffer {
             last_modified,
             cache_control,
             content_length,
+            vary_encoding,
         }
     }
 }
@@ -102,6 +119,27 @@ mod tests {
         assert_eq!(
             Encoding::from_accept_encoding("gzip;q=0.5, zstd;q=1.0"),
             Encoding::Zstd
+        );
+    }
+
+    #[test]
+    fn test_encoding_respects_q_zero() {
+        // q=0 means explicitly rejected
+        assert_eq!(
+            Encoding::from_accept_encoding("br;q=0, gzip"),
+            Encoding::Gzip
+        );
+        assert_eq!(
+            Encoding::from_accept_encoding("br;q=0, zstd;q=0, gzip"),
+            Encoding::Gzip
+        );
+        assert_eq!(
+            Encoding::from_accept_encoding("br;q=0, zstd;q=0, gzip;q=0"),
+            Encoding::Identity
+        );
+        assert_eq!(
+            Encoding::from_accept_encoding("gzip;q=0"),
+            Encoding::Identity
         );
     }
 }

@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::routes::NanoWeb;
 
@@ -60,26 +60,63 @@ pub async fn start_server(config: ServeConfig) -> Result<()> {
     info!("Starting server on http://{}", addr);
     info!("Serving directory: {:?}", config.public_dir);
 
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+
     loop {
-        let (stream, _) = listener.accept().await?;
-        let io = TokioIo::new(stream);
-        let state = state.clone();
-
-        tokio::spawn(async move {
-            let service = service_fn(move |req| {
+        tokio::select! {
+            result = listener.accept() => {
+                let (stream, _) = result?;
+                let io = TokioIo::new(stream);
                 let state = state.clone();
-                async move { handle_request(req, state) }
-            });
 
-            if let Err(e) = http1::Builder::new()
-                .keep_alive(true)
-                .pipeline_flush(true)
-                .serve_connection(io, service)
-                .await
-            {
-                debug!("Connection error: {}", e);
+                tokio::spawn(async move {
+                    let service = service_fn(move |req| {
+                        let state = state.clone();
+                        async move { handle_request(req, state) }
+                    });
+
+                    if let Err(e) = http1::Builder::new()
+                        .keep_alive(true)
+                        .pipeline_flush(true)
+                        .serve_connection(io, service)
+                        .await
+                    {
+                        debug!("Connection error: {}", e);
+                    }
+                });
             }
-        });
+            () = &mut shutdown => {
+                info!("Shutdown signal received, stopping server");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
     }
 }
 
@@ -99,10 +136,10 @@ fn handle_request(
         ));
     }
 
-    let path = req.uri().path();
+    let raw_path = req.uri().path();
 
     // Health check
-    if path == "/_health" {
+    if raw_path == "/_health" {
         let body = format!(
             r#"{{"status":"ok","timestamp":"{}"}}"#,
             httpdate::fmt_http_date(std::time::SystemTime::now())
@@ -111,19 +148,22 @@ fn handle_request(
             .status(StatusCode::OK)
             .header("content-type", "application/json")
             .body(Full::new(Bytes::from(body)))
-            .unwrap());
+            .expect("health check response"));
     }
 
-    // Path validation
-    if let Err(e) = crate::path::validate_request_path(path) {
-        tracing::warn!("Path validation failed for '{}': {}", path, e);
-        return Ok(response(StatusCode::BAD_REQUEST, "Bad Request"));
-    }
+    // Path validation — use the sanitized path for all lookups
+    let path = match crate::path::validate_request_path(raw_path) {
+        Ok(sanitized) => sanitized,
+        Err(e) => {
+            warn!("Path validation failed for '{}': {}", raw_path, e);
+            return Ok(response(StatusCode::BAD_REQUEST, "Bad Request"));
+        }
+    };
 
     // Dev mode: refresh if modified
     if state.config.dev {
         let _ = state.server.refresh_if_modified(
-            path,
+            &path,
             &state.config.public_dir,
             &state.config.config_prefix,
         );
@@ -140,7 +180,7 @@ fn handle_request(
         .get("if-none-match")
         .and_then(|h| h.to_str().ok());
 
-    let mut buf = state.server.get_response(path, accept_encoding);
+    let mut buf = state.server.get_response(&path, accept_encoding);
 
     // Try with trailing slash
     if buf.is_none() && !path.ends_with('/') {
@@ -163,7 +203,7 @@ fn handle_request(
                     .header("etag", b.etag.as_ref())
                     .header("cache-control", b.cache_control.as_ref())
                     .body(Full::new(Bytes::new()))
-                    .unwrap());
+                    .expect("304 response"));
             }
         }
         build_response(b, is_head)
@@ -175,7 +215,7 @@ fn handle_request(
     if state.config.log_requests {
         info!(
             method = %req.method(),
-            path = path,
+            path = %path,
             status = resp.status().as_u16(),
             "request"
         );
@@ -184,15 +224,13 @@ fn handle_request(
     Ok(resp)
 }
 
-#[inline(always)]
 fn response(status: StatusCode, body: &'static str) -> HyperResponse {
     Response::builder()
         .status(status)
         .body(Full::new(Bytes::from_static(body.as_bytes())))
-        .unwrap()
+        .expect("error response")
 }
 
-#[inline(always)]
 fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool) -> HyperResponse {
     let mut builder = Response::builder()
         .status(StatusCode::OK)
@@ -228,9 +266,12 @@ fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool)
         );
 
     if let Some(encoding) = buf.content_encoding {
-        builder = builder
-            .header(header::CONTENT_ENCODING, HeaderValue::from_static(encoding))
-            .header(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+        builder = builder.header(header::CONTENT_ENCODING, HeaderValue::from_static(encoding));
+    }
+
+    // Vary: Accept-Encoding for all compressible content, not just compressed responses
+    if buf.vary_encoding {
+        builder = builder.header(header::VARY, HeaderValue::from_static("Accept-Encoding"));
     }
 
     let body = if head_only {
@@ -239,5 +280,5 @@ fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool)
         buf.body.clone()
     };
 
-    builder.body(Full::new(body)).unwrap()
+    builder.body(Full::new(body)).expect("response body")
 }
