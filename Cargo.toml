@@ -29,8 +29,8 @@ flate2 = "1.1"
 fxhash = "0.2"
 http-body-util = "0.1"
 httpdate = "1"
-hyper = { version = "1.6", features = ["http1", "http2", "server"] }
-hyper-util = { version = "0.1", features = ["http1", "http2", "server", "tokio"] }
+hyper = { version = "1.6", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["http1", "server", "tokio"] }
 mime_guess = "2.0"
 minijinja = "2.7"
 rayon = "1.10"
@@ -43,6 +43,7 @@ tokio = { version = "1.47", features = [
   "macros",
   "net",
   "rt-multi-thread",
+  "signal",
   "time",
 ] }
 tracing = "0.1"
@@ -60,7 +61,6 @@ tokio-test = "0.4"
 mimalloc = "0.1.43"
 
 [lints.clippy]
-inline_always = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"

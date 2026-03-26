@@ -6,6 +6,7 @@ use anyhow::Result;
 use dashmap::DashMap;
 use fxhash::FxBuildHasher;
 use rayon::prelude::*;
+use std::hash::Hasher;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -16,7 +17,6 @@ type RouteMap = DashMap<Arc<str>, ResponseBuffer, FxBuildHasher>;
 
 #[derive(Debug, Clone)]
 struct CachedRoute {
-    content: Arc<CompressedContent>,
     path: Arc<PathBuf>,
     modified: SystemTime,
 }
@@ -41,7 +41,6 @@ impl ResponseCache {
         }
     }
 
-    #[inline(always)]
     fn get_map(&self, encoding: Encoding) -> &RouteMap {
         match encoding {
             Encoding::Identity => &self.identity,
@@ -51,7 +50,6 @@ impl ResponseCache {
         }
     }
 
-    #[inline(always)]
     fn get(&self, path: &str, encoding: Encoding) -> Option<ResponseBuffer> {
         // Try requested encoding first, fallback to identity for non-compressible files
         self.get_map(encoding)
@@ -88,7 +86,6 @@ impl NanoWeb {
         self.routes.len()
     }
 
-    #[inline(always)]
     pub fn get_response(&self, path: &str, accept_encoding: &str) -> Option<ResponseBuffer> {
         let encoding = Encoding::from_accept_encoding(accept_encoding);
         self.responses.get(path, encoding)
@@ -176,16 +173,16 @@ impl NanoWeb {
         };
 
         let compressed = CompressedContent::new(processed_content, mime_config.is_compressible)?;
-        let etag = Self::generate_etag(&modified, &compressed.plain);
+        let etag = Self::generate_etag(&compressed.plain);
         let last_modified = Self::format_http_date(modified);
 
         let ct: Arc<str> = Arc::from(mime_config.mime_type.as_str());
         let etag: Arc<str> = Arc::from(etag.as_str());
         let lm: Arc<str> = Arc::from(last_modified.as_str());
         let cc: Arc<str> = Arc::from(get_cache_control(&mime_config.mime_type));
+        let vary = mime_config.is_compressible;
 
         let route = CachedRoute {
-            content: Arc::new(compressed),
             path: Arc::new(file_path.to_path_buf()),
             modified,
         };
@@ -196,16 +193,17 @@ impl NanoWeb {
             url_path.clone(),
             Encoding::Identity,
             ResponseBuffer::new(
-                route.content.plain.clone(),
+                compressed.plain.clone(),
                 ct.clone(),
                 None,
                 etag.clone(),
                 lm.clone(),
                 cc.clone(),
+                vary,
             ),
         );
 
-        if let Some(data) = &route.content.gzip {
+        if let Some(data) = &compressed.gzip {
             self.responses.insert(
                 url_path.clone(),
                 Encoding::Gzip,
@@ -216,11 +214,12 @@ impl NanoWeb {
                     etag.clone(),
                     lm.clone(),
                     cc.clone(),
+                    vary,
                 ),
             );
         }
 
-        if let Some(data) = &route.content.brotli {
+        if let Some(data) = &compressed.brotli {
             self.responses.insert(
                 url_path.clone(),
                 Encoding::Brotli,
@@ -231,11 +230,12 @@ impl NanoWeb {
                     etag.clone(),
                     lm.clone(),
                     cc.clone(),
+                    vary,
                 ),
             );
         }
 
-        if let Some(data) = &route.content.zstd {
+        if let Some(data) = &compressed.zstd {
             self.responses.insert(
                 url_path.clone(),
                 Encoding::Zstd,
@@ -246,6 +246,7 @@ impl NanoWeb {
                     etag.clone(),
                     lm.clone(),
                     cc.clone(),
+                    vary,
                 ),
             );
         }
@@ -259,13 +260,10 @@ impl NanoWeb {
         Ok(Arc::from(url_path.as_str()))
     }
 
-    fn generate_etag(modified: &SystemTime, content: &[u8]) -> String {
-        use std::time::UNIX_EPOCH;
-        let timestamp = modified
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        format!("\"{:x}-{:x}\"", timestamp, content.len())
+    fn generate_etag(content: &[u8]) -> String {
+        let mut hasher = fxhash::FxHasher::default();
+        hasher.write(content);
+        format!("\"{:x}\"", hasher.finish())
     }
 
     fn format_http_date(time: SystemTime) -> String {
