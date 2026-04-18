@@ -27,3 +27,7 @@ Thumbs.db
 # Added by cargo
 
 /target
+
+# Tooling caches
+.vite/
+.claude/

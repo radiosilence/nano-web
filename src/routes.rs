@@ -4,8 +4,8 @@ use crate::response_buffer::{Encoding, ResponseBuffer};
 use crate::template::render_template;
 use anyhow::Result;
 use dashmap::DashMap;
-use fxhash::FxBuildHasher;
 use rayon::prelude::*;
+use rustc_hash::FxBuildHasher;
 use std::hash::Hasher;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -34,10 +34,10 @@ struct ResponseCache {
 impl ResponseCache {
     fn new() -> Self {
         Self {
-            identity: DashMap::with_hasher(FxBuildHasher::default()),
-            gzip: DashMap::with_hasher(FxBuildHasher::default()),
-            brotli: DashMap::with_hasher(FxBuildHasher::default()),
-            zstd: DashMap::with_hasher(FxBuildHasher::default()),
+            identity: DashMap::with_hasher(FxBuildHasher),
+            gzip: DashMap::with_hasher(FxBuildHasher),
+            brotli: DashMap::with_hasher(FxBuildHasher),
+            zstd: DashMap::with_hasher(FxBuildHasher),
         }
     }
 
@@ -77,7 +77,7 @@ impl Default for NanoWeb {
 impl NanoWeb {
     pub fn new() -> Self {
         Self {
-            routes: DashMap::with_hasher(FxBuildHasher::default()),
+            routes: DashMap::with_hasher(FxBuildHasher),
             responses: ResponseCache::new(),
         }
     }
@@ -261,7 +261,7 @@ impl NanoWeb {
     }
 
     fn generate_etag(content: &[u8]) -> String {
-        let mut hasher = fxhash::FxHasher::default();
+        let mut hasher = rustc_hash::FxHasher::default();
         hasher.write(content);
         format!("\"{:x}\"", hasher.finish())
     }
