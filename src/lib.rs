@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod compression;
+pub mod engine;
 pub mod mime_types;
 pub mod path;
 pub mod raw;

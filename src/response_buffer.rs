@@ -80,6 +80,9 @@ pub struct ResponseBuffer {
     /// "\r\n"), ready to write to a socket verbatim. Used by the raw engine,
     /// which writes `head` then `body` with no per-request formatting at all.
     pub head: Bytes,
+    /// Pre-serialized `304 Not Modified` response (validators only), so the
+    /// conditional path is a single verbatim write — no per-request `format!`.
+    pub head_304: Bytes,
 }
 
 impl ResponseBuffer {
@@ -103,6 +106,7 @@ impl ResponseBuffer {
             vary_encoding,
         );
         let head = serialize_head(&headers);
+        let head_304 = serialize_304(&etag, &cache_control);
         Self {
             body,
             content_type,
@@ -114,8 +118,20 @@ impl ResponseBuffer {
             vary_encoding,
             headers,
             head,
+            head_304,
         }
     }
+}
+
+/// Pre-serialize the `304 Not Modified` response (validators only).
+fn serialize_304(etag: &str, cache_control: &str) -> Bytes {
+    let mut buf = Vec::with_capacity(96);
+    buf.extend_from_slice(b"HTTP/1.1 304 Not Modified\r\netag: ");
+    buf.extend_from_slice(etag.as_bytes());
+    buf.extend_from_slice(b"\r\ncache-control: ");
+    buf.extend_from_slice(cache_control.as_bytes());
+    buf.extend_from_slice(b"\r\n\r\n");
+    Bytes::from(buf)
 }
 
 /// Serialize the 200-response status line + header block to raw bytes, ready to

@@ -10,6 +10,7 @@
 //! It exists to measure the ceiling of the no-library path, not to replace the
 //! production engine.
 
+use crate::engine::{self, Reply};
 use crate::routes::NanoWeb;
 use crate::server::{create_reuse_port_listener, ServeConfig};
 use anyhow::Result;
@@ -18,13 +19,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, info};
-
-const NOT_FOUND: &[u8] =
-    b"HTTP/1.1 404 Not Found\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: 9\r\n\r\nNot Found";
-const BAD_REQUEST: &[u8] =
-    b"HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: 11\r\n\r\nBad Request";
-const METHOD_NOT_ALLOWED: &[u8] =
-    b"HTTP/1.1 405 Method Not Allowed\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: 18\r\n\r\nMethod Not Allowed";
 
 pub async fn start_server(config: ServeConfig) -> Result<()> {
     let server = Arc::new(NanoWeb::new());
@@ -112,65 +106,21 @@ async fn respond(
     req: &httparse::Request<'_, '_>,
     spa: bool,
 ) -> Result<()> {
-    let method = req.method.unwrap_or("");
-    let is_head = method == "HEAD";
-    if method != "GET" && !is_head {
-        stream.write_all(METHOD_NOT_ALLOWED).await?;
-        return Ok(());
-    }
-
-    // httparse path includes the query string; strip it like hyper's uri().path().
-    let raw_path = req.path.unwrap_or("/");
-    let raw_path = raw_path.split('?').next().unwrap_or("/");
-
-    if raw_path == "/_health" {
-        let body = br#"{"status":"ok"}"#;
-        let head = format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
-            body.len()
-        );
-        stream.write_all(head.as_bytes()).await?;
-        stream.write_all(body).await?;
-        return Ok(());
-    }
-
-    let Ok(path) = crate::path::validate_request_path(raw_path) else {
-        stream.write_all(BAD_REQUEST).await?;
-        return Ok(());
+    // Extract the four fields routing needs, then let the shared core decide.
+    let parsed = engine::Request {
+        method: req.method.unwrap_or(""),
+        path: req.path.unwrap_or("/"),
+        accept_encoding: header(req, "accept-encoding").unwrap_or(""),
+        if_none_match: header(req, "if-none-match"),
     };
 
-    let accept_encoding = header(req, "accept-encoding").unwrap_or("");
-    let mut rb = server.get_response(&path, accept_encoding);
-    if rb.is_none() && !path.ends_with('/') {
-        rb = server.get_response(&format!("{path}/"), accept_encoding);
-    }
-    if rb.is_none() && spa {
-        rb = server.get_response("/", accept_encoding);
-    }
-
-    match rb {
-        Some(b) => {
-            // ETag conditional → 304 with the minimal validator header set.
-            if let Some(inm) = header(req, "if-none-match") {
-                if inm == b.etag.as_ref() {
-                    let head = format!(
-                        "HTTP/1.1 304 Not Modified\r\netag: {}\r\ncache-control: {}\r\n\r\n",
-                        b.etag, b.cache_control
-                    );
-                    stream.write_all(head.as_bytes()).await?;
-                    return Ok(());
-                }
-            }
-            if is_head {
-                stream.write_all(&b.head).await?;
-            } else {
-                // One writev for head+body. Two write_all calls would be two
-                // syscalls (and, with TCP_NODELAY, two segments) — which is
-                // exactly what made the previous cut lose ~18% on bodied GETs.
-                write_head_body(stream, &b.head, &b.body).await?;
-            }
-        }
-        None => stream.write_all(NOT_FOUND).await?,
+    match engine::route(server, &parsed, spa) {
+        // One writev for head+body — two write_all calls would be two syscalls
+        // (and two segments under TCP_NODELAY), which cost ~18% on bodied GETs.
+        Reply::Ok { buf, body: true } => write_head_body(stream, &buf.head, &buf.body).await?,
+        Reply::Ok { buf, body: false } => stream.write_all(&buf.head).await?,
+        Reply::NotModified { buf } => stream.write_all(&buf.head_304).await?,
+        Reply::Static(bytes) => stream.write_all(bytes).await?,
     }
     Ok(())
 }
