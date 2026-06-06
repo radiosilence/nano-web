@@ -1,7 +1,6 @@
 use anyhow::Result;
 use bytes::Bytes;
 use http_body_util::Full;
-use hyper::header::{self, HeaderName, HeaderValue};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
@@ -232,53 +231,16 @@ fn response(status: StatusCode, body: &'static str) -> HyperResponse {
 }
 
 fn build_response(buf: &crate::response_buffer::ResponseBuffer, head_only: bool) -> HyperResponse {
-    let mut builder = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, buf.content_type.as_ref())
-        .header(header::ETAG, buf.etag.as_ref())
-        .header(header::LAST_MODIFIED, buf.last_modified.as_ref())
-        .header(header::CACHE_CONTROL, buf.cache_control.as_ref())
-        // Pre-computed at route creation to avoid per-request integer→string alloc
-        .header(header::CONTENT_LENGTH, buf.content_length.as_ref())
-        .header(
-            header::X_CONTENT_TYPE_OPTIONS,
-            HeaderValue::from_static("nosniff"),
-        )
-        .header(
-            header::X_FRAME_OPTIONS,
-            HeaderValue::from_static("SAMEORIGIN"),
-        )
-        .header(
-            header::REFERRER_POLICY,
-            HeaderValue::from_static("strict-origin-when-cross-origin"),
-        )
-        .header(
-            header::STRICT_TRANSPORT_SECURITY,
-            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
-        )
-        .header(
-            HeaderName::from_static("permissions-policy"),
-            HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
-        )
-        .header(
-            HeaderName::from_static("x-dns-prefetch-control"),
-            HeaderValue::from_static("off"),
-        );
-
-    if let Some(encoding) = buf.content_encoding {
-        builder = builder.header(header::CONTENT_ENCODING, HeaderValue::from_static(encoding));
-    }
-
-    // Vary: Accept-Encoding for all compressible content, not just compressed responses
-    if buf.vary_encoding {
-        builder = builder.header(header::VARY, HeaderValue::from_static("Accept-Encoding"));
-    }
-
+    // Headers are precomputed once per route (response_buffer::build_headers); the
+    // hot path just clones the block and attaches the (cheaply ref-counted) body.
+    // HEAD keeps the full headers — including Content-Length — but drops the body.
     let body = if head_only {
         Bytes::new()
     } else {
         buf.body.clone()
     };
 
-    builder.body(Full::new(body)).expect("response body")
+    let mut resp = Response::new(Full::new(body));
+    *resp.headers_mut() = buf.headers.clone();
+    resp
 }

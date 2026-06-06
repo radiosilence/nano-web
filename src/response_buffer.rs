@@ -1,5 +1,23 @@
 use bytes::Bytes;
+use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
 use std::sync::Arc;
+
+/// Security headers identical on every 200 response. Stamped from `&'static str`
+/// so each insertion is a cheap shared `HeaderValue`, not a parse.
+const STATIC_SECURITY_HEADERS: [(HeaderName, &str); 6] = [
+    (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+    (header::X_FRAME_OPTIONS, "SAMEORIGIN"),
+    (header::REFERRER_POLICY, "strict-origin-when-cross-origin"),
+    (
+        header::STRICT_TRANSPORT_SECURITY,
+        "max-age=63072000; includeSubDomains",
+    ),
+    (
+        HeaderName::from_static("permissions-policy"),
+        "camera=(), microphone=(), geolocation=()",
+    ),
+    (HeaderName::from_static("x-dns-prefetch-control"), "off"),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Encoding {
@@ -54,6 +72,10 @@ pub struct ResponseBuffer {
     pub content_length: Arc<str>,
     /// Whether Vary: Accept-Encoding should be sent (true for all compressible types)
     pub vary_encoding: bool,
+    /// Fully-built header block for the 200 response. Precomputed once at route
+    /// creation so the hot path clones it instead of re-inserting ~13 headers
+    /// per request. The body is appended by the server (or dropped for HEAD).
+    pub headers: HeaderMap,
 }
 
 impl ResponseBuffer {
@@ -67,6 +89,15 @@ impl ResponseBuffer {
         vary_encoding: bool,
     ) -> Self {
         let content_length: Arc<str> = Arc::from(body.len().to_string().as_str());
+        let headers = build_headers(
+            &content_type,
+            content_encoding,
+            &etag,
+            &last_modified,
+            &cache_control,
+            &content_length,
+            vary_encoding,
+        );
         Self {
             body,
             content_type,
@@ -76,8 +107,41 @@ impl ResponseBuffer {
             cache_control,
             content_length,
             vary_encoding,
+            headers,
         }
     }
+}
+
+/// Build the complete 200-response header block. All values are server-controlled
+/// (mime types, hex etags, HTTP dates, digit content-lengths), so they are always
+/// valid header values — an invalid one is a bug, hence `expect`.
+fn build_headers(
+    content_type: &str,
+    content_encoding: Option<&'static str>,
+    etag: &str,
+    last_modified: &str,
+    cache_control: &str,
+    content_length: &str,
+    vary_encoding: bool,
+) -> HeaderMap {
+    let mut h = HeaderMap::with_capacity(13);
+    let val = |s: &str| HeaderValue::from_str(s).expect("server-controlled header value");
+
+    h.insert(header::CONTENT_TYPE, val(content_type));
+    h.insert(header::ETAG, val(etag));
+    h.insert(header::LAST_MODIFIED, val(last_modified));
+    h.insert(header::CACHE_CONTROL, val(cache_control));
+    h.insert(header::CONTENT_LENGTH, val(content_length));
+    if let Some(encoding) = content_encoding {
+        h.insert(header::CONTENT_ENCODING, HeaderValue::from_static(encoding));
+    }
+    if vary_encoding {
+        h.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+    }
+    for (name, value) in STATIC_SECURITY_HEADERS {
+        h.insert(name, HeaderValue::from_static(value));
+    }
+    h
 }
 
 #[cfg(test)]
