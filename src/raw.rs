@@ -161,12 +161,41 @@ async fn respond(
                     return Ok(());
                 }
             }
-            stream.write_all(&b.head).await?;
-            if !is_head {
-                stream.write_all(&b.body).await?;
+            if is_head {
+                stream.write_all(&b.head).await?;
+            } else {
+                // One writev for head+body. Two write_all calls would be two
+                // syscalls (and, with TCP_NODELAY, two segments) — which is
+                // exactly what made the previous cut lose ~18% on bodied GETs.
+                write_head_body(stream, &b.head, &b.body).await?;
             }
         }
         None => stream.write_all(NOT_FOUND).await?,
+    }
+    Ok(())
+}
+
+/// Write `head` then `body` in a single `writev` where the OS allows it, looping
+/// only to drain partial writes (large bodies). `TcpStream` reports vectored
+/// support, so small responses leave in one syscall with no copy and no extra
+/// allocation.
+async fn write_head_body(stream: &mut TcpStream, head: &[u8], body: &[u8]) -> std::io::Result<()> {
+    use std::io::IoSlice;
+    let total = head.len() + body.len();
+    let mut off = 0usize;
+    while off < total {
+        let (h, b) = if off < head.len() {
+            (&head[off..], body)
+        } else {
+            (&[][..], &body[off - head.len()..])
+        };
+        let n = stream
+            .write_vectored(&[IoSlice::new(h), IoSlice::new(b)])
+            .await?;
+        if n == 0 {
+            return Err(std::io::ErrorKind::WriteZero.into());
+        }
+        off += n;
     }
     Ok(())
 }
