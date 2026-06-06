@@ -84,6 +84,10 @@ pub enum Commands {
         #[arg(long = "log-requests")]
         #[arg(help = "Log HTTP requests")]
         log_requests: bool,
+
+        #[arg(long = "engine", default_value = "hyper")]
+        #[arg(help = "Request engine: hyper (production) or raw (experimental)")]
+        engine: String,
     },
     #[command(about = "Show version information")]
     Version,
@@ -111,9 +115,19 @@ impl Cli {
                 log_level,
                 log_format,
                 log_requests,
+                engine,
             }) => {
                 let public_dir = self.dir.clone();
                 let serve_dir = directory.clone().unwrap_or(public_dir);
+
+                let engine = match engine.as_str() {
+                    "hyper" => crate::server::Engine::Hyper,
+                    "raw" => crate::server::Engine::Raw,
+                    "uring" => crate::server::Engine::Uring,
+                    other => {
+                        anyhow::bail!("unknown --engine '{other}' (expected hyper, raw, or uring)")
+                    }
+                };
 
                 // Use subcommand values or fall back to global defaults
                 let final_log_level = log_level.unwrap_or(self.log_level);
@@ -129,6 +143,7 @@ impl Cli {
                     spa_mode: spa || self.spa,
                     config_prefix: config_prefix.unwrap_or(self.config_prefix),
                     log_requests: log_requests || self.log_requests,
+                    engine,
                 })
                 .await
             }

@@ -14,6 +14,18 @@ use tracing::{debug, info, warn};
 
 use crate::routes::NanoWeb;
 
+/// Request-handling engine. `Hyper` is the production path; `Raw` is an
+/// experimental hand-rolled HTTP/1.1 loop that writes precomputed response
+/// bytes with no library in the hot path (see `crate::raw`).
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum Engine {
+    #[default]
+    Hyper,
+    Raw,
+    /// `io_uring` (Linux only, built with `--features uring`).
+    Uring,
+}
+
 #[derive(Clone)]
 pub struct ServeConfig {
     pub public_dir: PathBuf,
@@ -22,6 +34,7 @@ pub struct ServeConfig {
     pub spa_mode: bool,
     pub config_prefix: String,
     pub log_requests: bool,
+    pub engine: Engine,
 }
 
 struct AppState {
@@ -30,7 +43,7 @@ struct AppState {
 }
 
 /// Create a TCP listener with `SO_REUSEPORT` for better multi-core scaling
-fn create_reuse_port_listener(addr: SocketAddr) -> Result<std::net::TcpListener> {
+pub(crate) fn create_reuse_port_listener(addr: SocketAddr) -> Result<std::net::TcpListener> {
     let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
     socket.set_reuse_address(true)?;
     #[cfg(unix)]
@@ -42,6 +55,21 @@ fn create_reuse_port_listener(addr: SocketAddr) -> Result<std::net::TcpListener>
 }
 
 pub async fn start_server(config: ServeConfig) -> Result<()> {
+    if config.engine == Engine::Raw {
+        return crate::raw::start_server(config).await;
+    }
+    if config.engine == Engine::Uring {
+        #[cfg(all(target_os = "linux", feature = "uring"))]
+        {
+            // monoio owns its own per-core runtimes; this blocks until shutdown.
+            return crate::uring::start_server(&config);
+        }
+        #[cfg(not(all(target_os = "linux", feature = "uring")))]
+        {
+            anyhow::bail!("io_uring engine requires Linux and `--features uring`");
+        }
+    }
+
     let server = Arc::new(NanoWeb::new());
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
 

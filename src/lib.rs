@@ -1,11 +1,16 @@
 pub mod cli;
 pub mod compression;
+pub mod engine;
 pub mod mime_types;
 pub mod path;
+pub mod raw;
 pub mod response_buffer;
 pub mod routes;
 pub mod server;
 pub mod template;
+
+#[cfg(all(target_os = "linux", feature = "uring"))]
+pub mod uring;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

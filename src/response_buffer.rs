@@ -76,6 +76,20 @@ pub struct ResponseBuffer {
     /// creation so the hot path clones it instead of re-inserting ~13 headers
     /// per request. The body is appended by the server (or dropped for HEAD).
     pub headers: HeaderMap,
+    /// Pre-serialized HTTP/1.1 response head ("HTTP/1.1 200 OK\r\n" + headers +
+    /// "\r\n"), ready to write to a socket verbatim. Used by the raw engine,
+    /// which writes `head` then `body` with no per-request formatting at all.
+    pub head: Bytes,
+    /// Pre-serialized `304 Not Modified` response (validators only), so the
+    /// conditional path is a single verbatim write — no per-request `format!`.
+    pub head_304: Bytes,
+    /// Full 200 response (head + body) as one contiguous buffer, so the `io_uring`
+    /// engine serves a bodied GET in a single syscall/SQE and a single segment —
+    /// monoio can't cheaply do a zero-copy vectored write of two `Bytes`, so we
+    /// trade memory (a second copy of the body) for one write. Built only in
+    /// uring builds; the tokio engine uses `writev` over `head`+`body` instead.
+    #[cfg(all(target_os = "linux", feature = "uring"))]
+    pub wire: Bytes,
 }
 
 impl ResponseBuffer {
@@ -98,6 +112,15 @@ impl ResponseBuffer {
             &content_length,
             vary_encoding,
         );
+        let head = serialize_head(&headers);
+        let head_304 = serialize_304(&etag, &cache_control);
+        #[cfg(all(target_os = "linux", feature = "uring"))]
+        let wire = {
+            let mut v = Vec::with_capacity(head.len() + body.len());
+            v.extend_from_slice(&head);
+            v.extend_from_slice(&body);
+            Bytes::from(v)
+        };
         Self {
             body,
             content_type,
@@ -108,8 +131,40 @@ impl ResponseBuffer {
             content_length,
             vary_encoding,
             headers,
+            head,
+            head_304,
+            #[cfg(all(target_os = "linux", feature = "uring"))]
+            wire,
         }
     }
+}
+
+/// Pre-serialize the `304 Not Modified` response (validators only).
+fn serialize_304(etag: &str, cache_control: &str) -> Bytes {
+    let mut buf = Vec::with_capacity(96);
+    buf.extend_from_slice(b"HTTP/1.1 304 Not Modified\r\netag: ");
+    buf.extend_from_slice(etag.as_bytes());
+    buf.extend_from_slice(b"\r\ncache-control: ");
+    buf.extend_from_slice(cache_control.as_bytes());
+    buf.extend_from_slice(b"\r\n\r\n");
+    Bytes::from(buf)
+}
+
+/// Serialize the 200-response status line + header block to raw bytes, ready to
+/// write to a socket. Date is intentionally omitted — the raw engine serves
+/// immutable precomputed bytes and cannot stamp a live date without per-request
+/// work, which is the whole point of avoiding.
+fn serialize_head(headers: &HeaderMap) -> Bytes {
+    let mut buf = Vec::with_capacity(320);
+    buf.extend_from_slice(b"HTTP/1.1 200 OK\r\n");
+    for (name, value) in headers {
+        buf.extend_from_slice(name.as_str().as_bytes());
+        buf.extend_from_slice(b": ");
+        buf.extend_from_slice(value.as_bytes());
+        buf.extend_from_slice(b"\r\n");
+    }
+    buf.extend_from_slice(b"\r\n");
+    Bytes::from(buf)
 }
 
 /// Build the complete 200-response header block. All values are server-controlled

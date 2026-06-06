@@ -57,8 +57,9 @@ cleanup() { [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
 start_server() {
-  echo "→ serve $BIN on :$PORT"
-  "$BIN" serve "$FIXTURES" --port "$PORT" --log-level error >/dev/null 2>&1 &
+  echo "→ serve $BIN on :$PORT (engine=${BENCH_ENGINE:-hyper})"
+  "$BIN" serve "$FIXTURES" --port "$PORT" --log-level error \
+    --engine "${BENCH_ENGINE:-hyper}" >/dev/null 2>&1 &
   SERVER_PID=$!
   for _ in $(seq 1 50); do
     curl -fsS "http://127.0.0.1:$PORT/_health" >/dev/null 2>&1 && return 0
