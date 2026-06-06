@@ -220,7 +220,7 @@ fn handle_request(
                     .expect("304 response"));
             }
         }
-        build_response(b, is_head)
+        build_response(b.as_ref(), is_head)
     } else {
         debug!("Route not found: {path}");
         response(StatusCode::NOT_FOUND, "Not Found")
