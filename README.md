@@ -11,8 +11,10 @@ Static file server. Pre-loads and pre-compresses all files at startup for near-z
 - Raw hyper
 - SO_REUSEPORT for multi-core scaling
 - Files pre-compressed at startup (brotli/gzip/zstd)
-- Lock-free concurrent routing (DashMap + fxhash)
-- Zero-copy responses (Bytes)
+- Lock-free concurrent routing (DashMap + rustc-hash)
+- Zero-copy responses (Bytes), with the full header block precomputed per route
+
+Benchmark methodology and a reproducible harness live in [`bench/`](bench/).
 
 Benchmark (M3 Max):
 

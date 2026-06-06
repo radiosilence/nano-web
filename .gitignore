@@ -31,3 +31,5 @@ Thumbs.db
 # Tooling caches
 .vite/
 .claude/
+bench/results/
+bench/fixtures/
