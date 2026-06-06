@@ -62,7 +62,7 @@ pub async fn start_server(config: ServeConfig) -> Result<()> {
         #[cfg(all(target_os = "linux", feature = "uring"))]
         {
             // monoio owns its own per-core runtimes; this blocks until shutdown.
-            return crate::uring::start_server(config);
+            return crate::uring::start_server(&config);
         }
         #[cfg(not(all(target_os = "linux", feature = "uring")))]
         {

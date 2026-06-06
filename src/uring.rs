@@ -1,8 +1,8 @@
-//! io_uring engine (Linux), via monoio. Thread-per-core, shared-nothing:
+//! `io_uring` engine (Linux), via monoio. Thread-per-core, shared-nothing:
 //! one monoio runtime per core, each with its own `SO_REUSEPORT` listener and a
 //! shared read-only `Arc<NanoWeb>`. The request handling is identical to every
 //! other engine — extract four fields, call [`engine::route`], write the
-//! [`Reply`] — only the read/write go through io_uring instead of epoll.
+//! [`Reply`] — only the read/write go through `io_uring` instead of epoll.
 //!
 //! This is the Linux half of the platform split; macOS uses the tokio/kqueue
 //! engine in `raw`. The only difference is the transport.
@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
-pub fn start_server(config: ServeConfig) -> Result<()> {
+pub fn start_server(config: &ServeConfig) -> Result<()> {
     let server = Arc::new(NanoWeb::new());
     server.populate_routes(&config.public_dir, &config.config_prefix)?;
     info!("Routes loaded: {} (io_uring engine)", server.route_count());
@@ -101,7 +101,7 @@ async fn handle_conn(mut stream: TcpStream, server: Arc<NanoWeb>, spa: bool) {
     }
 }
 
-/// Write an owned buffer fully via io_uring. Returns false on error.
+/// Write an owned buffer fully via `io_uring`. Returns false on error.
 async fn write_all<T: monoio::buf::IoBuf>(stream: &mut TcpStream, data: T) -> bool {
     let (res, _) = stream.write_all(data).await;
     res.is_ok()
