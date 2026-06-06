@@ -76,6 +76,10 @@ pub struct ResponseBuffer {
     /// creation so the hot path clones it instead of re-inserting ~13 headers
     /// per request. The body is appended by the server (or dropped for HEAD).
     pub headers: HeaderMap,
+    /// Pre-serialized HTTP/1.1 response head ("HTTP/1.1 200 OK\r\n" + headers +
+    /// "\r\n"), ready to write to a socket verbatim. Used by the raw engine,
+    /// which writes `head` then `body` with no per-request formatting at all.
+    pub head: Bytes,
 }
 
 impl ResponseBuffer {
@@ -98,6 +102,7 @@ impl ResponseBuffer {
             &content_length,
             vary_encoding,
         );
+        let head = serialize_head(&headers);
         Self {
             body,
             content_type,
@@ -108,8 +113,26 @@ impl ResponseBuffer {
             content_length,
             vary_encoding,
             headers,
+            head,
         }
     }
+}
+
+/// Serialize the 200-response status line + header block to raw bytes, ready to
+/// write to a socket. Date is intentionally omitted — the raw engine serves
+/// immutable precomputed bytes and cannot stamp a live date without per-request
+/// work, which is the whole point of avoiding.
+fn serialize_head(headers: &HeaderMap) -> Bytes {
+    let mut buf = Vec::with_capacity(320);
+    buf.extend_from_slice(b"HTTP/1.1 200 OK\r\n");
+    for (name, value) in headers {
+        buf.extend_from_slice(name.as_str().as_bytes());
+        buf.extend_from_slice(b": ");
+        buf.extend_from_slice(value.as_bytes());
+        buf.extend_from_slice(b"\r\n");
+    }
+    buf.extend_from_slice(b"\r\n");
+    Bytes::from(buf)
 }
 
 /// Build the complete 200-response header block. All values are server-controlled

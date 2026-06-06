@@ -28,6 +28,7 @@ dashmap = "6.1"
 flate2 = "1.1"
 rustc-hash = "2"
 http-body-util = "0.1"
+httparse = "1.9"
 httpdate = "1"
 hyper = { version = "1.9", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "server", "tokio"] }

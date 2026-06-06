@@ -2,6 +2,7 @@ use reqwest::StatusCode;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{sleep, Duration};
 
 /// Bind to port 0 and let the OS assign a free port, avoiding collisions in parallel test runs.
@@ -20,6 +21,22 @@ fn create_test_server(
     spa_mode: bool,
     dev_mode: bool,
 ) -> tokio::task::JoinHandle<()> {
+    create_test_server_engine(
+        temp_dir,
+        port,
+        spa_mode,
+        dev_mode,
+        nano_web::server::Engine::Hyper,
+    )
+}
+
+fn create_test_server_engine(
+    temp_dir: &Path,
+    port: u16,
+    spa_mode: bool,
+    dev_mode: bool,
+    engine: nano_web::server::Engine,
+) -> tokio::task::JoinHandle<()> {
     let config = nano_web::server::ServeConfig {
         public_dir: temp_dir.to_path_buf(),
         port,
@@ -27,6 +44,7 @@ fn create_test_server(
         spa_mode,
         config_prefix: "TEST_".to_string(),
         log_requests: false,
+        engine,
     };
 
     tokio::spawn(async move {
@@ -541,5 +559,162 @@ async fn test_cache_control_values() {
     assert_eq!(
         resp.headers().get("cache-control").unwrap(),
         "public, max-age=3600"
+    );
+}
+
+// ── Raw engine ───────────────────────────────────────────────────────────────
+// The raw engine (hand-rolled HTTP/1.1, no hyper) must match the production
+// engine's observable behaviour. These mirror the core hyper-path assertions.
+
+use nano_web::server::Engine;
+
+#[tokio::test]
+async fn test_raw_serves_body_and_headers() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("index.html"), "<h1>raw</h1>").unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server_engine(temp_dir.path(), port, false, false, Engine::Raw);
+    sleep(Duration::from_millis(100)).await;
+
+    let resp = reqwest::get(format!("http://localhost:{port}/"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers().get("content-type").unwrap(), "text/html");
+    assert_eq!(
+        resp.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
+    assert!(resp.headers().get("etag").is_some());
+    assert_eq!(resp.headers().get("content-length").unwrap(), "12");
+    assert_eq!(resp.text().await.unwrap(), "<h1>raw</h1>");
+}
+
+#[tokio::test]
+async fn test_raw_brotli_encoding() {
+    let temp_dir = TempDir::new().unwrap();
+    // >1KB compressible so compression kicks in
+    fs::write(temp_dir.path().join("app.js"), "// comment\n".repeat(200)).unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server_engine(temp_dir.path(), port, false, false, Engine::Raw);
+    sleep(Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::builder()
+        .no_gzip()
+        .no_brotli()
+        .build()
+        .unwrap();
+    let resp = client
+        .get(format!("http://localhost:{port}/app.js"))
+        .header("accept-encoding", "br")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers().get("content-encoding").unwrap(), "br");
+    assert_eq!(resp.headers().get("vary").unwrap(), "Accept-Encoding");
+}
+
+#[tokio::test]
+async fn test_raw_404_and_405() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("index.html"), "<h1>raw</h1>").unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server_engine(temp_dir.path(), port, false, false, Engine::Raw);
+    sleep(Duration::from_millis(100)).await;
+
+    let resp = reqwest::get(format!("http://localhost:{port}/missing"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    let resp = reqwest::Client::new()
+        .post(format!("http://localhost:{port}/"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn test_raw_head_and_304() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("index.html"), "<h1>raw</h1>").unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server_engine(temp_dir.path(), port, false, false, Engine::Raw);
+    sleep(Duration::from_millis(100)).await;
+
+    // HEAD: headers present, body empty
+    let resp = reqwest::Client::new()
+        .head(format!("http://localhost:{port}/"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers().get("content-length").unwrap(), "12");
+    assert!(resp.bytes().await.unwrap().is_empty());
+
+    // Fetch etag, then conditional GET → 304
+    let resp = reqwest::get(format!("http://localhost:{port}/"))
+        .await
+        .unwrap();
+    let etag = resp
+        .headers()
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let resp = reqwest::Client::new()
+        .get(format!("http://localhost:{port}/"))
+        .header("if-none-match", etag)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+}
+
+#[tokio::test]
+async fn test_raw_health() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("index.html"), "<h1>raw</h1>").unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server_engine(temp_dir.path(), port, false, false, Engine::Raw);
+    sleep(Duration::from_millis(100)).await;
+
+    let resp = reqwest::get(format!("http://localhost:{port}/_health"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.text().await.unwrap().contains("ok"));
+}
+
+#[tokio::test]
+async fn test_raw_path_traversal_blocked() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("index.html"), "<h1>raw</h1>").unwrap();
+
+    let port = get_free_port();
+    let _server = create_test_server_engine(temp_dir.path(), port, false, false, Engine::Raw);
+    sleep(Duration::from_millis(100)).await;
+
+    // reqwest normalizes ../ client-side, so hit the socket raw.
+    let mut s = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    s.write_all(b"GET /../../etc/passwd HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut resp = String::new();
+    s.read_to_string(&mut resp).await.unwrap();
+    assert!(
+        resp.starts_with("HTTP/1.1 400"),
+        "expected 400, got: {}",
+        &resp[..resp.len().min(40)]
     );
 }

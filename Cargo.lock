@@ -1033,6 +1033,7 @@ dependencies = [
  "dashmap",
  "flate2",
  "http-body-util",
+ "httparse",
  "httpdate",
  "hyper",
  "hyper-util",
