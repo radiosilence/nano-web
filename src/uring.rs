@@ -9,6 +9,7 @@
 
 use crate::engine::{self, Reply};
 use crate::routes::NanoWeb;
+use bytes::Bytes;
 use crate::server::{create_reuse_port_listener, ServeConfig};
 use anyhow::Result;
 use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
@@ -83,16 +84,15 @@ async fn handle_conn(mut stream: TcpStream, server: Arc<NanoWeb>, spa: bool) {
         let keep_alive = !connection_close(&req);
 
         let write_ok = match engine::route(&server, &parsed, spa) {
-            Reply::Ok { buf: rb, body } => {
-                let ok = write_all(&mut stream, rb.head.clone()).await;
-                if ok && body {
-                    write_all(&mut stream, rb.body.clone()).await
-                } else {
-                    ok
-                }
-            }
+            // Single write of the precomputed contiguous wire (head + body) — one
+            // io_uring submit, one TCP segment. Two separate write_all calls would
+            // be two ring round-trips and two segments under TCP_NODELAY (the
+            // tail-latency regression Track 2 found). The Bytes clone is an Arc bump.
+            Reply::Ok { buf: rb, body: true } => write_all(&mut stream, rb.wire.clone()).await,
+            Reply::Ok { buf: rb, body: false } => write_all(&mut stream, rb.head.clone()).await,
             Reply::NotModified { buf: rb } => write_all(&mut stream, rb.head_304.clone()).await,
-            Reply::Static(bytes) => write_all(&mut stream, bytes.to_vec()).await,
+            // from_static is zero-copy — no per-request allocation on error paths.
+            Reply::Static(bytes) => write_all(&mut stream, Bytes::from_static(bytes)).await,
         };
 
         if !write_ok || !keep_alive {

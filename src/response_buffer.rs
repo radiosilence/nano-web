@@ -83,6 +83,13 @@ pub struct ResponseBuffer {
     /// Pre-serialized `304 Not Modified` response (validators only), so the
     /// conditional path is a single verbatim write — no per-request `format!`.
     pub head_304: Bytes,
+    /// Full 200 response (head + body) as one contiguous buffer, so the `io_uring`
+    /// engine serves a bodied GET in a single syscall/SQE and a single segment —
+    /// monoio can't cheaply do a zero-copy vectored write of two `Bytes`, so we
+    /// trade memory (a second copy of the body) for one write. Built only in
+    /// uring builds; the tokio engine uses `writev` over `head`+`body` instead.
+    #[cfg(all(target_os = "linux", feature = "uring"))]
+    pub wire: Bytes,
 }
 
 impl ResponseBuffer {
@@ -107,6 +114,13 @@ impl ResponseBuffer {
         );
         let head = serialize_head(&headers);
         let head_304 = serialize_304(&etag, &cache_control);
+        #[cfg(all(target_os = "linux", feature = "uring"))]
+        let wire = {
+            let mut v = Vec::with_capacity(head.len() + body.len());
+            v.extend_from_slice(&head);
+            v.extend_from_slice(&body);
+            Bytes::from(v)
+        };
         Self {
             body,
             content_type,
@@ -119,6 +133,8 @@ impl ResponseBuffer {
             headers,
             head,
             head_304,
+            #[cfg(all(target_os = "linux", feature = "uring"))]
+            wire,
         }
     }
 }
