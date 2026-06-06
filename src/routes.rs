@@ -13,7 +13,9 @@ use std::time::SystemTime;
 use tracing::{debug, error, info};
 use walkdir::WalkDir;
 
-type RouteMap = DashMap<Arc<str>, ResponseBuffer, FxBuildHasher>;
+// Values are Arc so the hot path clones one refcount, not the whole struct (body +
+// 5 Arc<str> + a 13-entry HeaderMap). Routes are write-once at startup / dev-reload.
+type RouteMap = DashMap<Arc<str>, Arc<ResponseBuffer>, FxBuildHasher>;
 
 #[derive(Debug, Clone)]
 struct CachedRoute {
@@ -50,15 +52,15 @@ impl ResponseCache {
         }
     }
 
-    fn get(&self, path: &str, encoding: Encoding) -> Option<ResponseBuffer> {
+    fn get(&self, path: &str, encoding: Encoding) -> Option<Arc<ResponseBuffer>> {
         // Try requested encoding first, fallback to identity for non-compressible files
         self.get_map(encoding)
             .get(path)
             .or_else(|| self.identity.get(path))
-            .map(|e| e.value().clone())
+            .map(|e| Arc::clone(e.value()))
     }
 
-    fn insert(&self, path: Arc<str>, encoding: Encoding, buf: ResponseBuffer) {
+    fn insert(&self, path: Arc<str>, encoding: Encoding, buf: Arc<ResponseBuffer>) {
         self.get_map(encoding).insert(path, buf);
     }
 }
@@ -86,7 +88,7 @@ impl NanoWeb {
         self.routes.len()
     }
 
-    pub fn get_response(&self, path: &str, accept_encoding: &str) -> Option<ResponseBuffer> {
+    pub fn get_response(&self, path: &str, accept_encoding: &str) -> Option<Arc<ResponseBuffer>> {
         let encoding = Encoding::from_accept_encoding(accept_encoding);
         self.responses.get(path, encoding)
     }
@@ -192,7 +194,7 @@ impl NanoWeb {
         self.responses.insert(
             url_path.clone(),
             Encoding::Identity,
-            ResponseBuffer::new(
+            Arc::new(ResponseBuffer::new(
                 compressed.plain.clone(),
                 ct.clone(),
                 None,
@@ -200,14 +202,14 @@ impl NanoWeb {
                 lm.clone(),
                 cc.clone(),
                 vary,
-            ),
+            )),
         );
 
         if let Some(data) = &compressed.gzip {
             self.responses.insert(
                 url_path.clone(),
                 Encoding::Gzip,
-                ResponseBuffer::new(
+                Arc::new(ResponseBuffer::new(
                     data.clone(),
                     ct.clone(),
                     Some("gzip"),
@@ -215,7 +217,7 @@ impl NanoWeb {
                     lm.clone(),
                     cc.clone(),
                     vary,
-                ),
+                )),
             );
         }
 
@@ -223,7 +225,7 @@ impl NanoWeb {
             self.responses.insert(
                 url_path.clone(),
                 Encoding::Brotli,
-                ResponseBuffer::new(
+                Arc::new(ResponseBuffer::new(
                     data.clone(),
                     ct.clone(),
                     Some("br"),
@@ -231,7 +233,7 @@ impl NanoWeb {
                     lm.clone(),
                     cc.clone(),
                     vary,
-                ),
+                )),
             );
         }
 
@@ -239,7 +241,7 @@ impl NanoWeb {
             self.responses.insert(
                 url_path.clone(),
                 Encoding::Zstd,
-                ResponseBuffer::new(
+                Arc::new(ResponseBuffer::new(
                     data.clone(),
                     ct.clone(),
                     Some("zstd"),
@@ -247,7 +249,7 @@ impl NanoWeb {
                     lm.clone(),
                     cc.clone(),
                     vary,
-                ),
+                )),
             );
         }
 
