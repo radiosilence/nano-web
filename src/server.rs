@@ -22,6 +22,8 @@ pub enum Engine {
     #[default]
     Hyper,
     Raw,
+    /// `io_uring` (Linux only, built with `--features uring`).
+    Uring,
 }
 
 #[derive(Clone)]
@@ -55,6 +57,17 @@ pub(crate) fn create_reuse_port_listener(addr: SocketAddr) -> Result<std::net::T
 pub async fn start_server(config: ServeConfig) -> Result<()> {
     if config.engine == Engine::Raw {
         return crate::raw::start_server(config).await;
+    }
+    if config.engine == Engine::Uring {
+        #[cfg(all(target_os = "linux", feature = "uring"))]
+        {
+            // monoio owns its own per-core runtimes; this blocks until shutdown.
+            return crate::uring::start_server(config);
+        }
+        #[cfg(not(all(target_os = "linux", feature = "uring")))]
+        {
+            anyhow::bail!("io_uring engine requires Linux and `--features uring`");
+        }
     }
 
     let server = Arc::new(NanoWeb::new());

@@ -9,6 +9,9 @@ pub mod routes;
 pub mod server;
 pub mod template;
 
+#[cfg(all(target_os = "linux", feature = "uring"))]
+pub mod uring;
+
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn init_logging(level: &str, format: &str) {

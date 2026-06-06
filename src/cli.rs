@@ -123,7 +123,10 @@ impl Cli {
                 let engine = match engine.as_str() {
                     "hyper" => crate::server::Engine::Hyper,
                     "raw" => crate::server::Engine::Raw,
-                    other => anyhow::bail!("unknown --engine '{other}' (expected hyper or raw)"),
+                    "uring" => crate::server::Engine::Uring,
+                    other => {
+                        anyhow::bail!("unknown --engine '{other}' (expected hyper, raw, or uring)")
+                    }
                 };
 
                 // Use subcommand values or fall back to global defaults
