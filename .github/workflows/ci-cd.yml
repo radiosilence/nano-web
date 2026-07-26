@@ -237,7 +237,6 @@ jobs:
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
           push: ${{ env.PUBLISH == 'true' }}
-          build-args: BIN_SOURCE=prebuilt
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ matrix.arch }}
 
       - name: Tag ${{ matrix.arch }} with version
