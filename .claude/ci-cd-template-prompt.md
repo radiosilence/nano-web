@@ -26,15 +26,14 @@ You are helping set up a GitHub Actions CI/CD pipeline for a Rust project. Use t
 - `check-version` — reads `Cargo.toml` version, queries GitHub Releases API for latest release tag, outputs `should_release`, `version`, `major`, `major_minor`
 
 ### Main push, only when `should_release == true`
-- `build-musl` (matrix: amd64 + arm64) — cross-compiles the linux musl targets. Split out from `build-binaries` so the image jobs gate on these two alone rather than on the macOS/Windows legs.
-- `build-binaries` (matrix) — cross-compiles for linux-amd64-gnu, linux-arm64-gnu, macos-arm64, windows-amd64. Uploads artifacts.
+- `build-binaries` (matrix) — cross-compiles for linux-amd64-gnu, linux-arm64-gnu, macos-arm64, windows-amd64. Uploads artifacts. The linux musl targets are built by `build-image` instead.
 
 ### Docker jobs (main push only, if Docker enabled)
-- `build-image` (matrix: amd64 + arm64) — downloads its arch's musl artifact and copies it into a `scratch` image; does not compile. Pushes `main-{arch}` tag. On release, also retags as `{version}-{arch}` via `docker buildx imagetools create`.
+- `build-image` (matrix: amd64 + arm64) — compiles the linux musl target and copies the result into a `scratch` image on the same runner, then uploads it as a release artifact. One compile serves both outputs; the binary never round-trips through the artifact store. Pushes `main-{arch}` tag. On release, also retags as `{version}-{arch}` via `docker buildx imagetools create`.
 - `create-manifest` — always on main push (needs test/lint/format + build-image). Pushes `:main` multi-arch manifest always. On release, also pushes `:latest`, `:{version}`, `:{major}`, `:{major}.{minor}`, `:{short-sha}`.
 
 ### Release jobs (only when `should_release == true`)
-- `create-release` — needs test + lint + format + build-binaries + build-musl + check-version + create-manifest (if Docker). Creates annotated git tag, creates GitHub Release with auto-generated notes, attaches all binary artifacts.
+- `create-release` — needs test + lint + format + build-binaries + check-version + create-manifest (if Docker). Creates annotated git tag, creates GitHub Release with auto-generated notes, attaches all binary artifacts (musl ones arrive transitively via build-image).
 - `publish-crate` — needs create-release. Runs `cargo publish` with `CARGO_TOKEN` secret.
 
 ---
@@ -69,7 +68,7 @@ Requires `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` in env.
 ## Questions to ask the user before generating
 
 1. **What is the binary name?** (used in artifact naming and build paths)
-2. **Do you want Docker image publishing to GHCR?** (adds build-musl, build-image, create-manifest jobs)
+2. **Do you want Docker image publishing to GHCR?** (adds build-image, create-manifest jobs; moves the musl targets out of build-binaries into build-image)
    - If yes: what port does it listen on? (default: `3000`)
 3. **Do you want to publish to crates.io?** (adds publish-crate job, requires CARGO_TOKEN secret)
 4. **Which target platforms for binaries?** (default: linux amd64/arm64 gnu+musl, macos arm64, windows amd64 — remove any not needed)

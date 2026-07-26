@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **CI**: Docker images now ship the binary already built by the release matrix instead of recompiling it inside the image. The linux musl targets moved into their own `build-musl` job that `build-image` consumes as an artifact, removing two full `lto = "fat"` compiles per push. `Dockerfile` still compiles from source by default — CI selects the prebuilt path with `--build-arg BIN_SOURCE=prebuilt`.
+- **CI**: Docker images no longer recompile the binary. `build-image` now owns the linux musl compile and copies the result straight into a `scratch` image on the same runner, then uploads it as the release asset — removing two full `lto = "fat"` compiles per push. `Dockerfile` still compiles from source by default; CI selects the prebuilt path with `--build-arg BIN_SOURCE=prebuilt`.
 - **CI**: Dropped the GHA layer cache on the Docker builds. With no compile in the image there is nothing worth caching, and `mode=max` was filling the repo-wide 10GB cache that `Swatinem/rust-cache` shares.
 - **CI**: `test` and `lint` only save caches on `main`. Branch-scoped caches can't be read by other branches, so PR runs were writing entries that only evicted the ones they restore from.
 - **CI**: Dropped the redundant cache on the formatting job — `cargo fmt --check` compiles nothing.
