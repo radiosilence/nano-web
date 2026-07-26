@@ -1,4 +1,9 @@
-# Build stage
+# Selects which stage supplies the binary. Must be declared before the first
+# FROM to be usable in one. `docker build .` compiles from source; CI passes
+# prebuilt to reuse the binary the release matrix already built.
+ARG BIN_SOURCE=source
+
+# Source build.
 FROM rust:1-slim AS builder
 
 # Install build dependencies
@@ -22,11 +27,16 @@ RUN TARGET=$(uname -m)-unknown-linux-musl && \
     cargo build --release --target $TARGET && \
     cp target/$TARGET/release/nano-web /tmp/nano-web
 
-# Runtime stage
-FROM scratch
-
-# Copy the binary
+FROM scratch AS bin-source
 COPY --from=builder /tmp/nano-web /nano-web
+
+FROM scratch AS bin-prebuilt
+ARG TARGETARCH
+COPY dist/nano-web-linux-${TARGETARCH}-musl /nano-web
+
+# Runtime stage. BuildKit only builds the stage this resolves to, so the
+# source build is skipped entirely when BIN_SOURCE=prebuilt.
+FROM bin-${BIN_SOURCE}
 
 # Create volume for static files
 VOLUME ["/public"]

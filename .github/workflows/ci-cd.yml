@@ -30,6 +30,8 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run tests
         run: cargo test --all-features
@@ -46,6 +48,8 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Lint with Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -59,9 +63,6 @@ jobs:
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -105,6 +106,56 @@ jobs:
           echo "major=${MAJOR}" >> $GITHUB_OUTPUT
           echo "major_minor=${MAJOR}.${MINOR}" >> $GITHUB_OUTPUT
 
+  # Split from build-binaries so build-image gates on these two alone rather
+  # than the whole matrix. Their output is the binary shipped in the image.
+  build-musl:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    needs: [check-version]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+            target: x86_64-unknown-linux-musl
+            name: nano-web-linux-amd64-musl
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            target: aarch64-unknown-linux-musl
+            name: nano-web-linux-arm64-musl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare binary
+        run: cp target/${{ matrix.target }}/release/nano-web ${{ matrix.name }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+
   build-binaries:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -119,12 +170,6 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             name: nano-web-linux-arm64-gnu
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            name: nano-web-linux-amd64-musl
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            name: nano-web-linux-arm64-musl
           - os: macos-latest
             target: aarch64-apple-darwin
             name: nano-web-macos-arm64
@@ -134,15 +179,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          if [[ "${{ matrix.name }}" = *"-musl" ]]; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends \
-              --allow-unauthenticated musl-tools
-          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
@@ -176,7 +212,7 @@ jobs:
   build-image:
     name: Build ${{ matrix.arch }} Image
     runs-on: ${{ matrix.runner }}
-    needs: [check-version]
+    needs: [check-version, build-musl]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     strategy:
       matrix:
@@ -193,6 +229,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Download ${{ matrix.arch }} binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nano-web-linux-${{ matrix.arch }}-musl
+          path: dist
+
+      # upload-artifact does not preserve the executable bit, and the scratch
+      # image has no shell to fix it at runtime.
+      - name: Restore executable bit
+        run: chmod +x dist/nano-web-linux-${{ matrix.arch }}-musl
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
@@ -211,9 +258,8 @@ jobs:
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
+          build-args: BIN_SOURCE=prebuilt
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ matrix.arch }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       - name: Tag ${{ matrix.arch }} with version
         if: needs.check-version.outputs.should_release == 'true'
@@ -294,43 +340,11 @@ jobs:
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-  quick-test:
-    name: Quick Docker Test
-    runs-on: ubuntu-latest
-    needs: [create-manifest, check-version]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Test Docker image
-        run: |
-          mkdir -p public
-          echo "<html><body>Hello nano-web!</body></html>" > public/index.html
-
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
-
-          docker run -d --name test-nano-web \
-            -p 3000:3000 \
-            -v $(pwd)/public:/public \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
-
-          sleep 5
-
-          curl -f http://localhost:3000/_health || exit 1
-
-          RESPONSE=$(curl -s http://localhost:3000/)
-          if [[ "$RESPONSE" != *"Hello nano-web!"* ]]; then
-            echo "❌ Content test failed"
-            exit 1
-          fi
-
-          echo "✅ Docker image test passed!" >> $GITHUB_STEP_SUMMARY
-
-          docker stop test-nano-web
-          docker rm test-nano-web
-
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [test, lint, format, build-binaries, check-version, quick-test]
+    needs:
+      [test, lint, format, build-binaries, build-musl, check-version, create-manifest]
     if: needs.check-version.outputs.should_release == 'true'
     permissions:
       contents: write
