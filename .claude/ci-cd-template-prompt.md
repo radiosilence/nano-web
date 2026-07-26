@@ -22,18 +22,18 @@ You are helping set up a GitHub Actions CI/CD pipeline for a Rust project. Use t
 - `lint` — `cargo clippy --all-targets --all-features -- -D warnings`
 - `format` — `cargo fmt --all -- --check`
 
-### Main push only
-- `check-version` — reads `Cargo.toml` version, queries GitHub Releases API for latest release tag, outputs `should_release`, `version`, `major`, `major_minor`
+Everything that *builds* runs on PRs and on main. Everything that *publishes* is gated on main push. The point is that a PR fails on a broken Dockerfile or a target that stopped compiling, rather than discovering it after merge.
 
-### Main push, only when `should_release == true`
+### Every run (PR + main push)
+- `check-version` — reads `Cargo.toml` version, queries GitHub Releases API for latest release tag, outputs `should_release`, `version`, `major`, `major_minor`
 - `build-binaries` (matrix) — cross-compiles for linux-amd64-gnu, linux-arm64-gnu, macos-arm64, windows-amd64. Uploads artifacts. The linux musl targets are built by `build-image` instead.
 
-### Docker jobs (main push only, if Docker enabled)
-- `build-image` (matrix: amd64 + arm64) — compiles the linux musl target and copies the result into a `scratch` image on the same runner, then uploads it as a release artifact. One compile serves both outputs; the binary never round-trips through the artifact store. Pushes `main-{arch}` tag. On release, also retags as `{version}-{arch}` via `docker buildx imagetools create`.
-- `create-manifest` — always on main push (needs test/lint/format + build-image). Pushes `:main` multi-arch manifest always. On release, also pushes `:latest`, `:{version}`, `:{major}`, `:{major}.{minor}`, `:{short-sha}`.
+### Docker jobs (if Docker enabled)
+- `build-image` (matrix: amd64 + arm64) — compiles the linux musl target and copies the result into a `scratch` image on the same runner, then uploads it as a release artifact. One compile serves both outputs; the binary never round-trips through the artifact store (which costs a runner handoff and drops the exec bit). Runs on PRs too, with a job-level `PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}` gating the registry login, `push:` and version retag — so PRs build the image and discard it.
+- `create-manifest` — main push only (needs test/lint/format + build-image). Pushes `:main` multi-arch manifest always. On release, also pushes `:latest`, `:{version}`, `:{major}`, `:{major}.{minor}`, `:{short-sha}`.
 
 ### Release jobs (only when `should_release == true`)
-- `create-release` — needs test + lint + format + build-binaries + check-version + create-manifest (if Docker). Creates annotated git tag, creates GitHub Release with auto-generated notes, attaches all binary artifacts (musl ones arrive transitively via build-image).
+- `create-release` — needs test + lint + format + build-binaries + check-version + create-manifest (if Docker). Guarded on main push *as well as* `should_release`, since `check-version` now runs on PRs and its output alone no longer implies a release context. Creates annotated git tag, creates GitHub Release with auto-generated notes, attaches all binary artifacts (musl ones arrive transitively via build-image).
 - `publish-crate` — needs create-release. Runs `cargo publish` with `CARGO_TOKEN` secret.
 
 ---
