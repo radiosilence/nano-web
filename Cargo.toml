@@ -1,6 +1,6 @@
 [package]
 name = "nano-web"
-version = "1.4.4"
+version = "1.4.5"
 edition = "2021"
 rust-version = "1.75"
 description = "Static file server built with Rust with pre-compressed in-memory caching"
@@ -80,6 +80,6 @@ debug = true
 opt-level = 3
 debug = false
 strip = true
-lto = "thin"
+lto = "fat"
 panic = "abort"
-codegen-units = 16
+codegen-units = 1

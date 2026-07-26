@@ -5,6 +5,12 @@ All notable changes to nano-web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] (2026-07-26)
+
+### Changed
+
+- **Build**: Restored `lto = "fat"` with `codegen-units = 1`. 1.4.4 moved to thin LTO as part of a fleet-wide sweep; that is right for the I/O-bound MCP services, which spend their time blocked on sockets, but wrong here. nano-web is CPU-bound on its hot path and is meant to be as optimised as possible, so the slower build is the intended trade. `bench/run.sh` + `bench/compare.py` are there if the actual delta is ever worth measuring.
+
 ## [1.4.4] (2026-07-26)
 
 ### Changed
@@ -16,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Docker**: The image has no build stage at all now — it is a single `FROM scratch` that copies in the musl binary CI already built. Building it by hand requires `dist/` populated first; docker builds only ever happen in CI, so the source-build path was carrying no weight.
-- **CI**: Docker images no longer recompile the binary. `build-image` now owns the linux musl compile and copies the result straight into a `scratch` image on the same runner, then uploads it as the release asset — removing two full `lto = "fat"` compiles per push. `Dockerfile` still compiles from source by default; CI selects the prebuilt path with `--build-arg BIN_SOURCE=prebuilt`.
+- **CI**: Docker images no longer recompile the binary. `build-image` now owns the linux musl compile and copies the result straight into a `scratch` image on the same runner, then uploads it as the release asset — removing two full `lto = "fat"` compiles per push.
 - **CI**: Dropped the GHA layer cache on the Docker builds. With no compile in the image there is nothing worth caching, and `mode=max` was filling the repo-wide 10GB cache that `Swatinem/rust-cache` shares.
 - **CI**: `test` and `lint` only save caches on `main`. Branch-scoped caches can't be read by other branches, so PR runs were writing entries that only evicted the ones they restore from.
 - **CI**: Dropped the redundant cache on the formatting job — `cargo fmt --check` compiles nothing.
