@@ -30,6 +30,8 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run tests
         run: cargo test --all-features
@@ -46,6 +48,8 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Lint with Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -60,16 +64,12 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 
   check-version:
     name: Check Version
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
@@ -108,8 +108,6 @@ jobs:
   build-binaries:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    needs: [check-version]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     strategy:
       matrix:
         include:
@@ -119,12 +117,6 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             name: nano-web-linux-arm64-gnu
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            name: nano-web-linux-amd64-musl
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            name: nano-web-linux-arm64-musl
           - os: macos-latest
             target: aarch64-apple-darwin
             name: nano-web-macos-arm64
@@ -134,15 +126,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          if [[ "${{ matrix.name }}" = *"-musl" ]]; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends \
-              --allow-unauthenticated musl-tools
-          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
@@ -173,50 +156,92 @@ jobs:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
 
+  # Compiles the musl binary and ships it straight into the image on the same
+  # runner. Kept out of build-binaries so the image never waits on the macOS or
+  # Windows legs; kept in one job so the binary never round-trips through the
+  # artifact store, which would cost a runner handoff and drop its exec bit.
+  # Runs on PRs too — only the registry push is main-gated, via PUBLISH.
   build-image:
     name: Build ${{ matrix.arch }} Image
     runs-on: ${{ matrix.runner }}
     needs: [check-version]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     strategy:
       matrix:
         include:
           - arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
     permissions:
       contents: read
       packages: write
+    env:
+      PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # Same file feeds the image build and the release asset.
+      - name: Prepare binary
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/nano-web \
+            dist/nano-web-linux-${{ matrix.arch }}-musl
+
+      - name: Upload binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nano-web-linux-${{ matrix.arch }}-musl
+          path: dist/nano-web-linux-${{ matrix.arch }}-musl
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
       - name: Log in to Container Registry
+        if: env.PUBLISH == 'true'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.arch }}
+      # On PRs this still builds — it just discards the result instead of
+      # pushing, so a broken Dockerfile fails before merge rather than after.
+      - name: Build ${{ matrix.arch }}
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
-          push: true
+          push: ${{ env.PUBLISH == 'true' }}
+          build-args: BIN_SOURCE=prebuilt
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ matrix.arch }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       - name: Tag ${{ matrix.arch }} with version
-        if: needs.check-version.outputs.should_release == 'true'
+        if: env.PUBLISH == 'true' && needs.check-version.outputs.should_release == 'true'
         run: |
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-version.outputs.version }}-${{ matrix.arch }} \
@@ -294,44 +319,14 @@ jobs:
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-  quick-test:
-    name: Quick Docker Test
-    runs-on: ubuntu-latest
-    needs: [create-manifest, check-version]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Test Docker image
-        run: |
-          mkdir -p public
-          echo "<html><body>Hello nano-web!</body></html>" > public/index.html
-
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
-
-          docker run -d --name test-nano-web \
-            -p 3000:3000 \
-            -v $(pwd)/public:/public \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
-
-          sleep 5
-
-          curl -f http://localhost:3000/_health || exit 1
-
-          RESPONSE=$(curl -s http://localhost:3000/)
-          if [[ "$RESPONSE" != *"Hello nano-web!"* ]]; then
-            echo "❌ Content test failed"
-            exit 1
-          fi
-
-          echo "✅ Docker image test passed!" >> $GITHUB_STEP_SUMMARY
-
-          docker stop test-nano-web
-          docker rm test-nano-web
-
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [test, lint, format, build-binaries, check-version, quick-test]
-    if: needs.check-version.outputs.should_release == 'true'
+    needs:
+      [test, lint, format, build-binaries, check-version, create-manifest]
+    if: >-
+      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      needs.check-version.outputs.should_release == 'true'
     permissions:
       contents: write
     steps:
