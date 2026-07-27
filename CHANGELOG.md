@@ -5,6 +5,16 @@ All notable changes to nano-web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.6] (2026-07-27)
+
+### Fixed
+
+- **Dev mode**: `--dev` now reloads the URLs people actually load. Index files are published under two keys — `/index.html` and `/` — but the refresh only re-inserted the canonical one, so editing `index.html` and reloading `/` served the bytes captured at startup, indefinitely. Route publishing now goes through one function shared by the startup scan and the refresh, so the alias cannot be left behind again.
+- **Dev mode**: Files created after startup are picked up instead of 404ing forever. The refresh returned early when a URL had no route, which is exactly the case for a new file.
+- **Dev mode**: Deleted files stop being served instead of returning their last-known contents. The missing-file error was discarded by the caller, leaving the stale route in place.
+
+Production serving is unaffected — routes there are write-once by design.
+
 ## [1.4.5] (2026-07-26)
 
 ### Changed
