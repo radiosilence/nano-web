@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # GitHub evicts a cache after 7 days without a read, and this repo goes quiet
+  # for longer than that. A run restores every cache, and a restore is a read,
+  # so a tick twice a week keeps main warm through the gaps. Nothing here
+  # publishes on a schedule — those jobs all gate on a push event.
+  schedule:
+    - cron: "0 6 * * 1,4"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,8 +24,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  test:
-    name: Test
+  check:
+    name: Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -31,41 +38,19 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          # A pull request restores main's cache but writes none of its own: a
+          # branch's cache is invisible to every other branch and still evicts
+          # from the repository's 10GB, which is how main ends up cold.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Run tests
-        run: cargo test --all-features
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        with:
-          toolchain: stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Lint with Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-  format:
-    name: Check Formatting
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        with:
-          toolchain: stable
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      # One job, one target directory: clippy compiles the dependency graph and
+      # the tests reuse it, where two jobs each built it into a cache of its own.
+      # fmt compiles nothing, so it goes first and fails cheapest.
+      - name: Check
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features --locked -- -D warnings
+          cargo test --all-features --locked
 
   check-version:
     name: Check Version
@@ -109,6 +94,9 @@ jobs:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
+      # A cancelled leg saves nothing, so one broken target would leave the rest
+      # of the matrix cold on the next run as well as this one.
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -137,9 +125,10 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build binary
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Prepare binary
         shell: bash
@@ -166,6 +155,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: [check-version]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: amd64
@@ -200,9 +190,10 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build binary
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       # Same file feeds the image build and the release asset.
       - name: Prepare binary
@@ -249,7 +240,7 @@ jobs:
   create-manifest:
     name: Push Docker Image
     runs-on: ubuntu-latest
-    needs: [test, lint, format, build-image, check-version]
+    needs: [check, build-image, check-version]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
@@ -321,8 +312,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs:
-      [test, lint, format, build-binaries, check-version, create-manifest]
+    needs: [check, build-binaries, check-version, create-manifest]
     if: >-
       github.ref == 'refs/heads/main' && github.event_name == 'push' &&
       needs.check-version.outputs.should_release == 'true'
@@ -374,6 +364,8 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Publish to crates.io
         env:
