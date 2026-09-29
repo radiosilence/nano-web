@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`apple-app-site-association` is served as `application/json`.** The file has no extension, so it went out as `application/octet-stream`, and Apple expects JSON when it fetches the file for universal links.
+
 ## [1.4.8] (2026-09-29)
 
 ### Added
