@@ -108,6 +108,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             name: nano-web-macos-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: nano-web-macos-amd64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: nano-web-windows-amd64.exe
@@ -359,6 +362,7 @@ jobs:
             nano-web-linux-amd64-musl/nano-web-linux-amd64-musl
             nano-web-linux-arm64-musl/nano-web-linux-arm64-musl
             nano-web-macos-arm64/nano-web-macos-arm64
+            nano-web-macos-amd64/nano-web-macos-amd64
             nano-web-windows-amd64.exe/nano-web-windows-amd64.exe
 
   publish-crate:
