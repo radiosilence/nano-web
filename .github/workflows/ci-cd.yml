@@ -243,8 +243,8 @@ jobs:
           key: aarch64-apple-darwin
           save-if: ${{ github.event_name == 'schedule' }}
 
-      # Each check runs whether or not the one before it passed, so a clippy failure
-      # does not hide whether the tests pass.
+      # Each check runs whether or not the one before it passed, so a clippy
+      # failure does not hide whether the tests pass.
       - name: Clippy
         if: ${{ !cancelled() && env.CHECK == 'true' }}
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
