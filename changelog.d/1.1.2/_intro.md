@@ -1,0 +1,3 @@
+- Add musl builds
+- Use mimalloc for docker/musl builds
+- Bump dependencies
