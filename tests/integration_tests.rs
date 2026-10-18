@@ -357,7 +357,7 @@ async fn test_head_returns_empty_body() {
 
     // HEAD should return empty body
     let body = response.text().await.unwrap();
-    assert!(body.is_empty());
+    assert_eq!(body, "");
 }
 
 #[tokio::test]
