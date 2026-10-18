@@ -37,15 +37,32 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null || [ -n "$(git ls-remot
   echo "tag $tag already exists" >&2
   exit 1
 fi
-if git rev-parse -q --verify "refs/heads/$branch" >/dev/null || [ -n "$(git ls-remote --heads origin "$branch")" ]; then
-  echo "branch $branch already exists" >&2
-  exit 1
-fi
-
 newest=$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)
 if [ "$version" = "$current" ] || [ "$newest" != "$version" ]; then
   echo "$version is not greater than the current version $current" >&2
   exit 1
+fi
+
+# A branch left by a closed or merged release PR is cut again; an open PR is not touched.
+local_branch=$(git rev-parse -q --verify "refs/heads/$branch" || true)
+remote_branch=$(git ls-remote --heads origin "$branch")
+if [ -n "$local_branch" ] || [ -n "$remote_branch" ]; then
+  open_pr=$(gh pr list --head "$branch" --state all --json number,state -q 'map(select(.state == "OPEN"))[0].number // empty')
+  if [ -n "$open_pr" ]; then
+    echo "branch $branch has open PR #$open_pr: close it first, or merge it" >&2
+    exit 1
+  fi
+  if [ -n "$local_branch" ]; then
+    [ "$(git branch --show-current)" != "$branch" ] || git switch -q --detach origin/main
+    git branch -q -D "$branch"
+  fi
+  if [ "$push" = 1 ]; then
+    [ -z "$remote_branch" ] || git push -q origin --delete "$branch"
+    echo "deleted stale branch $branch, cutting it again from origin/main"
+  else
+    echo "deleted stale local branch $branch, cutting it again from origin/main"
+    [ -z "$remote_branch" ] || echo "warning: origin/$branch is left (--no-push); the push will need it deleted" >&2
+  fi
 fi
 
 git switch -c "$branch" origin/main --no-track
