@@ -1,0 +1,1 @@
+- **Intel macOS binary** (`nano-web-macos-amd64`). Releases ship the arm64 macOS binary only; on an Intel Mac, install with `cargo install nano-web` or run the Docker image.
