@@ -1,19 +1,22 @@
 # Changelog
 
-All notable changes to nano-web will be documented in this file.
+## Unreleased
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Internal
 
-## [Unreleased]
+- **Releases are cut from a release PR.** `just release` (or the Release workflow) bumps the version and turns `changelog.d/` fragments into the changelog; merging the PR publishes, and CI creates the tag through the API rather than pushing one.
 
-## [1.4.8] (2026-09-29)
+## 1.4.8
+
+Released 2026-09-29.
 
 ### Added
 
 - **Intel macOS binary** (`nano-web-macos-amd64`), signed and notarised like the arm64 one. It was dropped in August 2025 along with the musl builds, which needed a cross toolchain; the Intel mac build cross-compiles on the arm64 runner without one.
 
-## [1.4.7] (2026-09-29)
+## 1.4.7
+
+Released 2026-09-29.
 
 ### Changed
 
@@ -27,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI**: Builds pass `--locked`. A resolver that is free to move produces a `Cargo.lock` that differs from the committed one, and the lockfile hash is part of the cache key.
 - **CI**: `fail-fast: false` on the build matrices. A cancelled leg saves nothing, so one broken target left the rest cold on the next run too.
 
-## [1.4.6] (2026-07-27)
+## 1.4.6
+
+Released 2026-07-27.
 
 ### Fixed
 
@@ -37,19 +42,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Production serving is unaffected — routes there are write-once by design.
 
-## [1.4.5] (2026-07-26)
+## 1.4.5
+
+Released 2026-07-26.
 
 ### Changed
 
 - **Build**: Restored `lto = "fat"` with `codegen-units = 1`. 1.4.4 moved to thin LTO as part of a fleet-wide sweep; that is right for the I/O-bound MCP services, which spend their time blocked on sockets, but wrong here. nano-web is CPU-bound on its hot path and is meant to be as optimised as possible, so the slower build is the intended trade. `bench/run.sh` + `bench/compare.py` are there if the actual delta is ever worth measuring.
 
-## [1.4.4] (2026-07-26)
+## 1.4.4
+
+Released 2026-07-26.
 
 ### Changed
 
 - **Build**: Switched from `lto = "fat"` (thin LTO) with `codegen-units = 1` to `lto = "thin"` with `codegen-units = 16`. Fat LTO with single codegen unit serializes whole-program optimization across the entire dependency tree, forcing the slowest possible build. Thin LTO with parallel codegen units cuts build time substantially. Throughput impact not measured; `bench/run.sh` + `bench/compare.py` available if needed.
 
-## [1.4.3] (2026-07-26)
+## 1.4.3
+
+Released 2026-07-26.
 
 ### Changed
 
@@ -64,13 +75,17 @@ Production serving is unaffected — routes there are write-once by design.
 
 - **CI**: The `quick-test` Docker smoke test job. Release now gates on `create-manifest` so the tag still lands only after the images are pushed.
 
-## [1.4.2] (2026-04-18)
+## 1.4.2
+
+Released 2026-04-18.
 
 ### Fixed
 
 - **CI**: `cargo publish` now uses `--locked` (prevents lockfile regen from failing the publish with "working directory contains changes"). Also switched from deprecated `--token` flag to `CARGO_REGISTRY_TOKEN` env var. v1.4.1 shipped to GitHub / Docker but not crates.io — v1.4.2 is otherwise identical and is the first to land on crates.io in the 1.4.x line.
 
-## [1.4.1] (2026-04-18)
+## 1.4.1
+
+Released 2026-04-18.
 
 ### Security
 
@@ -83,7 +98,9 @@ Production serving is unaffected — routes there are write-once by design.
 - Dep bumps within existing constraints: `clap` 4.6, `hyper` 1.9, `minijinja` 2.19, `socket2` 0.6.3, `tokio` 1.52, `reqwest` 0.13, `tempfile` 3.27.
 - Pinned CI action SHAs to latest releases (`dtolnay/rust-toolchain`, `Swatinem/rust-cache`).
 
-## [1.4.0] (2026-03-26)
+## 1.4.0
+
+Released 2026-03-26.
 
 ### Fixed
 
@@ -104,7 +121,7 @@ Production serving is unaffected — routes there are write-once by design.
 - Removed unused HTTP/2 feature flags from `hyper` and `hyper-util` dependencies
 - Removed cargo-cult `#[inline(always)]` attributes — let the compiler decide
 
-## [1.3.1]
+## 1.3.1
 
 ### Fixed
 
@@ -114,7 +131,7 @@ Production serving is unaffected — routes there are write-once by design.
 - Pre-compute `Content-Length` header value at route creation instead of per-request integer→string conversion
 - Reverted `foldhash` → `fxhash` — quality-grade random-seeded hash is unnecessary overhead for a pre-populated route cache with filesystem-derived keys
 
-## [1.3.0]
+## 1.3.0
 
 ### Changed
 
@@ -141,7 +158,7 @@ Production serving is unaffected — routes there are write-once by design.
 - **Performance**: pre-compute `Content-Length` header value at route creation instead of integer→string conversion per request
 - Pedantic clippy warnings: uninlined format args, `map`/`unwrap_or_else` patterns, match-for-single-pattern, doc backticks
 
-## [1.2.0]
+## 1.2.0
 
 ### Fixed
 
@@ -171,7 +188,7 @@ Production serving is unaffected — routes there are write-once by design.
 - Unit tests for `Encoding::from_accept_encoding` (priority, substring safety, quality values)
 - Integration tests for HEAD requests, ETag/304, and METHOD_NOT_ALLOWED
 
-## [1.1.5]
+## 1.1.5
 
 - Fixed non-compressible files (images, etc) returning 404 when Accept-Encoding header present
 - Zero-allocation response lookups (split response cache by encoding)
@@ -181,30 +198,36 @@ Production serving is unaffected — routes there are write-once by design.
 - Consistent encoding priority (br > zstd > gzip)
 - Code cleanup
 
-## [1.1.2]
+## 1.1.2
 
 - Add musl builds
 - Use mimalloc for docker/musl builds
 - Bump dependencies
 
-## [1.0.7]
+## 1.0.7
 
 - Maximum compression for various libs
 - Code reorganisation a bit
 
-## [1.0.5] - 2025-08-07
+## 1.0.5
+
+Released 2025-08-07.
 
 ### Technical
 
 - dont enable cpu native
 
-## [0.12.1] - 2025-08-01
+## 0.12.1
+
+Released 2025-08-01.
 
 ### Added
 
 - Add automated changelog system with complete version history
 
-## [0.12.0] - 2025-08-01
+## 0.12.0
+
+Released 2025-08-01.
 
 ### Changed
 
@@ -216,7 +239,9 @@ Production serving is unaffected — routes there are write-once by design.
 - Simplified CLI structure by removing direct directory argument support from root command
 - Eliminated RunE function from root command, forcing users to use `nano-web serve` instead of `nano-web [directory]`
 
-## [0.11.0] - 2025-08-01
+## 0.11.0
+
+Released 2025-08-01.
 
 ### Changed
 
@@ -230,26 +255,34 @@ Production serving is unaffected — routes there are write-once by design.
 - Updated Dockerfile to use new default port
 - Improved Taskfile.yml configuration
 
-## [0.10.1] - 2025-08-01
+## 0.10.1
+
+Released 2025-08-01.
 
 ### Technical
 
 - Updated build configuration and documentation
 - Refined Taskfile.yml and README structure
 
-## [0.10.0] - 2025-08-01
+## 0.10.0
+
+Released 2025-08-01.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.9.1] - 2025-07-31
+## 0.9.1
+
+Released 2025-07-31.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.9.0] - 2025-07-31
+## 0.9.0
+
+Released 2025-07-31.
 
 ### Changed
 
@@ -270,7 +303,9 @@ Production serving is unaffected — routes there are write-once by design.
 - Added comprehensive flag validation and completion functions
 - Improved environment variable handling with helper functions
 
-## [0.8.1] - 2025-06-02
+## 0.8.1
+
+Released 2025-06-02.
 
 ### Added
 
@@ -283,7 +318,9 @@ Production serving is unaffected — routes there are write-once by design.
 - Optimized Docker builds with native ARM64 runners
 - Added HOMEBREW.md installation guide
 
-## [0.8.0] - 2025-05-31
+## 0.8.0
+
+Released 2025-05-31.
 
 ### Added
 
@@ -295,25 +332,33 @@ Production serving is unaffected — routes there are write-once by design.
 - Extended compression tests for all three formats
 - Updated route compression logic to support zstd
 
-## [0.7.9] - 2025-05-30
+## 0.7.9
+
+Released 2025-05-30.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.7.2] - 2025-05-30
+## 0.7.2
+
+Released 2025-05-30.
 
 ### Technical
 
 - Version bump and merge cleanup
 
-## [0.7.1] - 2025-05-30
+## 0.7.1
+
+Released 2025-05-30.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.7.0] - 2025-05-30
+## 0.7.0
+
+Released 2025-05-30.
 
 ### Added
 
@@ -328,7 +373,9 @@ Production serving is unaffected — routes there are write-once by design.
 - Removed benchmark pipeline and updated CI configuration
 - Improved README with badges and cleaner documentation
 
-## [0.6.2] - 2025-05-27
+## 0.6.2
+
+Released 2025-05-27.
 
 ### Fixed
 
@@ -338,7 +385,9 @@ Production serving is unaffected — routes there are write-once by design.
 
 - Fixed dev environment flag handling
 
-## [0.6.1] - 2025-05-27
+## 0.6.1
+
+Released 2025-05-27.
 
 ### Fixed
 
@@ -350,7 +399,9 @@ Production serving is unaffected — routes there are write-once by design.
 - Restored proper environment variable integration
 - Cleaned up CLI structure and documentation
 
-## [0.6.0] - 2025-05-27
+## 0.6.0
+
+Released 2025-05-27.
 
 ### Added
 
@@ -370,7 +421,9 @@ Production serving is unaffected — routes there are write-once by design.
 - Improved ETag generation using MD5 hashing of modification timestamps
 - Added comprehensive file stat checking and error handling
 
-## [0.5.10] - 2025-05-27
+## 0.5.10
+
+Released 2025-05-27.
 
 ### Fixed
 
@@ -382,61 +435,81 @@ Production serving is unaffected — routes there are write-once by design.
 - Code formatting improvements with gofmt
 - Better route path normalization
 
-## [0.5.9] - 2025-05-27
+## 0.5.9
+
+Released 2025-05-27.
 
 ### Technical
 
 - Cleaned up source references and documentation
 
-## [0.5.8] - 2025-05-27
+## 0.5.8
+
+Released 2025-05-27.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.5.7] - 2025-05-27
+## 0.5.7
+
+Released 2025-05-27.
 
 ### Technical
 
 - Moved source files to root directory structure
 
-## [0.5.6] - 2025-05-27
+## 0.5.6
+
+Released 2025-05-27.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.5.5] - 2025-05-27
+## 0.5.5
+
+Released 2025-05-27.
 
 ### Technical
 
 - Fixed VERSION file format
 
-## [0.5.4] - 2025-05-27
+## 0.5.4
+
+Released 2025-05-27.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.5.3] - 2025-05-27
+## 0.5.3
+
+Released 2025-05-27.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.5.2] - 2025-05-27
+## 0.5.2
+
+Released 2025-05-27.
 
 ### Technical
 
 - Version bump without functional changes
 
-## [0.5.1] - 2025-05-27
+## 0.5.1
+
+Released 2025-05-27.
 
 ### Technical
 
 - Cleaned up old main file references
 
-## [0.5.0] - 2025-05-27
+## 0.5.0
+
+Released 2025-05-27.
 
 ### Changed
 

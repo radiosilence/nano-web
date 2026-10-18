@@ -1,0 +1,2 @@
+- Maximum compression for various libs
+- Code reorganisation a bit

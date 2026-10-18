@@ -1,0 +1,7 @@
+- Fixed non-compressible files (images, etc) returning 404 when Accept-Encoding header present
+- Zero-allocation response lookups (split response cache by encoding)
+- Static error responses (404/400 no longer allocate)
+- Fixed dev mode file reloading
+- Fixed status codes for 404 and 400 responses
+- Consistent encoding priority (br > zstd > gzip)
+- Code cleanup

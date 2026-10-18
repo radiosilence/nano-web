@@ -1,2 +1,4 @@
 [tools]
 rust = "latest"
+just = "latest"
+lefthook = "latest"

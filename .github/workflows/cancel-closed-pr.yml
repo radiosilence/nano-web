@@ -1,0 +1,30 @@
+name: Cancel a closed pull request's runs
+
+# GitHub keeps running a pull request's workflows after it is merged or
+# closed. Those runs hold the few macOS runners that main and a release are
+# waiting for, so a closed pull request gives them up at once.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel the pull request's queued and running workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          SELF: ${{ github.run_id }}
+        run: |
+          for status in requested queued pending waiting in_progress; do
+            gh run list --repo "$REPO" --branch "$BRANCH" --event pull_request --status "$status" \
+              --json databaseId --jq '.[].databaseId'
+          done | sort -u | while read -r id; do
+            [ "$id" = "$SELF" ] && continue
+            gh run cancel "$id" --repo "$REPO" || true
+          done

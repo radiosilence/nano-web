@@ -1,0 +1,1 @@
+- **Releases are cut from a release PR.** `just release` (or the Release workflow) bumps the version and turns `changelog.d/` fragments into the changelog; merging the PR publishes, and CI creates the tag through the API rather than pushing one.
