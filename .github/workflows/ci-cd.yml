@@ -89,6 +89,7 @@ jobs:
       major: ${{ steps.check.outputs.major }}
       major_minor: ${{ steps.check.outputs.major_minor }}
       apple: ${{ steps.apple.outputs.apple }}
+      release_pr: ${{ steps.apple.outputs.release_pr }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -130,21 +131,28 @@ jobs:
       # pull request can break on macOS. What it cannot check is a change to
       # the dependencies, the toolchain, the build configuration or the
       # workflow, or Rust code gated on an Apple target; only those pull
-      # requests take a macOS runner. The release pull request bumps the
-      # version in Cargo.toml, so it always does.
+      # requests take a macOS runner. A release pull request is one that
+      # changes the version in Cargo.toml, so it always does, and it also
+      # builds the release binary.
       - name: Check if the change needs macOS
         id: apple
         env:
           EVENT: ${{ github.event_name }}
         run: |
+          version_of() { sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
           apple=false
+          release_pr=false
           if [ "$EVENT" = "pull_request" ]; then
+            if [ "$(git show HEAD^1:Cargo.toml | version_of)" != "$(version_of < Cargo.toml)" ]; then
+              release_pr=true
+            fi
             if git diff --name-only HEAD^1 HEAD | grep -qE '^(Cargo\.(toml|lock)|build\.rs|rust-toolchain(\.toml)?|\.mise\.toml|\.cargo/|\.github/workflows/)' \
               || git diff HEAD^1 HEAD -- '*.rs' | grep -qE '^[+-].*target_(os|vendor) *= *"(macos|apple)"'; then
               apple=true
             fi
           fi
           echo "apple=$apple" >> "$GITHUB_OUTPUT"
+          echo "release_pr=$release_pr" >> "$GITHUB_OUTPUT"
 
   build-binaries:
     name: Build ${{ matrix.name }}
@@ -200,16 +208,25 @@ jobs:
 
   # Every macOS step in one job on one runner, sharing one target directory
   # and one cache: the account has few macOS runners and every repository
-  # queues for them. A pull request that needs macOS runs clippy, the tests
-  # and the release build; a release builds, notarises and uploads the binary
-  # its pull request already checked; the scheduled run does all of it to keep
-  # the cache warm. Anything else skips the job, which then holds no runner.
+  # queues for them. A pull request that needs macOS runs clippy and the
+  # tests, which compile all the code the release build does; a release pull
+  # request also builds the release binary, unsigned, so a broken release
+  # build fails before the version merges. A release builds, notarises and
+  # uploads the binary its pull request already checked. Anything else skips
+  # the job, which then holds no runner.
+  #
+  # Only the scheduled run saves the cache, and it runs the checks alone, so
+  # the cache holds the profile pull requests build. A release run saving it
+  # would leave an entry with only release artifacts under the same key, and
+  # later runs would restore that instead. Release builds start cold.
   apple:
     name: Apple
     runs-on: macos-latest
     needs: [check-version]
     if: needs.check-version.outputs.should_release == 'true' || needs.check-version.outputs.apple == 'true' || github.event_name == 'schedule'
     env:
+      CHECK: ${{ needs.check-version.outputs.should_release != 'true' }}
+      PACKAGE: ${{ needs.check-version.outputs.should_release == 'true' || needs.check-version.outputs.release_pr == 'true' }}
       RELEASE: ${{ needs.check-version.outputs.should_release }}
     steps:
       - name: Checkout
@@ -224,15 +241,20 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: aarch64-apple-darwin
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'schedule' }}
 
-      - name: Check
-        if: env.RELEASE != 'true'
-        run: |
-          cargo clippy --all-targets --all-features --locked -- -D warnings
-          cargo test --all-features --locked
+      # Each check runs whether or not the one before it passed, so a clippy failure
+      # does not hide whether the tests pass.
+      - name: Clippy
+        if: ${{ !cancelled() && env.CHECK == 'true' }}
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Test
+        if: ${{ !cancelled() && env.CHECK == 'true' }}
+        run: cargo test --all-features --locked
 
       - name: Build binary
+        if: ${{ !cancelled() && env.PACKAGE == 'true' }}
         run: cargo build --release --locked
 
       # Developer ID signed and notarised, so the binary runs from a browser
