@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.9
 
 ### Internal
 
