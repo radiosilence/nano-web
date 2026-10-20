@@ -112,14 +112,19 @@ jobs:
           fi
           base=HEAD^1
           if [ "$EVENT" = "push" ]; then
+            base=
             passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci-cd.yml --branch main --event push \
-              --status success --limit 1 --json headSha --jq '.[0].headSha' 2>/dev/null || true)
-            if [ -n "$passed" ] && [ "$passed" != "$(git rev-parse HEAD)" ] && git fetch -q --deepen=100 origin main && git merge-base --is-ancestor "$passed" HEAD; then
+              --status success --limit 1 --json headSha --jq '.[0].headSha // empty' || true)
+            if [ "$passed" = "$(git rev-parse HEAD)" ]; then
+              base=HEAD^1
+            elif [ -n "$passed" ] && git fetch -q --deepen=200 origin main && git merge-base --is-ancestor "$passed" HEAD; then
               base=$passed
+            else
+              echo "::notice::no passed run on main within reach -- running everything"
             fi
           fi
           # Whether this run releases, the one answer every release job reads.
-          # A pull request: a release PR (branch `release-*`, or a version
+          # A pull request: a release PR (branch `release-v*`, or a version
           # change), which runs everything. A push to main: it changes the
           # version and that version is not out yet. Comparing with the latest
           # release instead would let a push that lands while a release runs
@@ -135,7 +140,7 @@ jobs:
           fi
           case "$EVENT" in
             pull_request)
-              case "$HEAD_REF" in release-*) bumped=true ;; esac
+              case "$HEAD_REF" in release-v*) bumped=true ;; esac
               release=$bumped
               ;;
             *)
@@ -165,7 +170,7 @@ jobs:
           if [ "$state" != "OPEN" ]; then
             echo "pull request #$PR is no longer open -- skipping everything"
             rust=false apple=false windows=false docker=false release=false
-          elif { [ "$EVENT" = "push" ] || [ "$EVENT" = "pull_request" ]; } && files=$(git diff --name-only "$base" HEAD); then
+          elif { [ "$EVENT" = "push" ] || [ "$EVENT" = "pull_request" ]; } && [ -n "$base" ] && files=$(git diff --name-only "$base" HEAD); then
             echo "changes since $(git rev-parse --short "$base"):"
             printf '%s\n' "$files" | sed 's/^/  /'
 
@@ -216,7 +221,8 @@ jobs:
   # and main's earlier non-release runs, which a newer one supersedes. At the
   # start rather than in CD, so the release builds that start alongside the
   # checks find the runners free. A job of its own, so only it holds a token
-  # that can cancel runs.
+  # that can cancel runs. Best effort: the release builds wait on it, so a
+  # failed lookup or cancel is passed over rather than failing the job.
   make-room:
     name: Make room for the release
     runs-on: ubuntu-latest
@@ -236,10 +242,10 @@ jobs:
           for status in requested queued pending waiting in_progress; do
             gh run list --repo "$GITHUB_REPOSITORY" --workflow ci-cd.yml --status "$status" --limit 100 \
               --json databaseId,event,headBranch,headSha,displayTitle \
-              --jq '.[] | select(.event == "pull_request" or (.event == "push" and .headBranch == "main" and (.displayTitle | startswith("release: ") | not))) | "\(.databaseId) \(.event) \(.headSha)"'
+              --jq '.[] | select(.event == "pull_request" or (.event == "push" and .headBranch == "main" and (.displayTitle | startswith("release: ") | not))) | "\(.databaseId) \(.event) \(.headSha)"' || true
           done | sort -u | while read -r id event sha; do
             [ "$id" = "$SELF" ] && continue
-            if [ "$event" = "push" ] && gh api "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.files[].filename' | grep -qx Cargo.toml; then
+            if [ "$event" = "push" ] && gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.files[].filename' | grep -qx Cargo.toml; then
               continue
             fi
             echo "cancelling run $id"
@@ -256,9 +262,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     timeout-minutes: 30
-    concurrency:
-      group: check-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
@@ -316,9 +319,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.apple == 'true' && !(github.event_name != 'pull_request' && needs.changes.outputs.release == 'true')
     timeout-minutes: 45
-    concurrency:
-      group: apple-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
@@ -346,9 +346,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docker == 'true'
     timeout-minutes: 30
-    concurrency:
-      group: image-build-${{ matrix.name }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -394,9 +391,6 @@ jobs:
     timeout-minutes: 15
     needs: [changes, image-build]
     if: ${{ !cancelled() && needs.image-build.result == 'success' }}
-    concurrency:
-      group: container-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     permissions:
       contents: read
       packages: write
@@ -438,9 +432,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.windows == 'true'
     timeout-minutes: 45
-    concurrency:
-      group: windows-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
@@ -463,17 +454,14 @@ jobs:
 
   # The glibc binaries, which only a release ships: `check` already compiles
   # the same code for Linux. They publish nothing, so they start alongside the
-  # checks; a release pull request builds them too, so a broken release build
-  # fails before the version merges.
+  # checks, after `make-room` on main; a release pull request builds them
+  # too, so a broken release build fails before the version merges.
   release-build:
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
-    needs: changes
-    if: needs.changes.outputs.release == 'true'
+    needs: [changes, make-room]
+    if: ${{ !cancelled() && needs.changes.outputs.release == 'true' && (needs.make-room.result == 'success' || needs.make-room.result == 'skipped') }}
     timeout-minutes: 30
-    concurrency:
-      group: release-build-${{ matrix.name }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
