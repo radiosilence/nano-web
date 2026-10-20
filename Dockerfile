@@ -1,5 +1,7 @@
-# CI builds the static musl binary; this image only copies it in. Building it
-# by hand needs dist/ populated first — docker builds only ever happen in CI.
+# CI builds the static musl binaries; this image only copies one in. The build
+# context is dist/, holding nano-web-linux-<arch>-musl for each architecture,
+# so a build by hand needs those in place first: docker builds only ever
+# happen in CI.
 #
 # No CA bundle here, unlike the MCP images: nano-web serves files and makes no
 # outbound TLS connections, so it needs no trust store.
@@ -7,7 +9,7 @@ FROM scratch
 
 ARG TARGETARCH
 
-COPY dist/nano-web-linux-${TARGETARCH}-musl /nano-web
+COPY --chmod=755 nano-web-linux-${TARGETARCH}-musl /nano-web
 
 VOLUME ["/public"]
 EXPOSE 3000

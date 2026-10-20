@@ -1,61 +1,288 @@
 name: CI/CD
 
+# Two halves in one run, so the second can use what the first built.
+#
+# CI checks the change and ends in `Checks`, the one status the ruleset
+# requires. Each job runs only for the domains the change touches (see
+# `changes`); a skipped job passes `Checks`, a failed or cancelled one fails
+# it. Jobs can therefore be added, renamed or skipped without touching branch
+# protection.
+#
+# CD runs after `Checks` has passed on main. Every push that changes the
+# binary moves the image's `main` tag onto the image CI pushed for the commit;
+# a push that changes the version also releases: the image's version tags,
+# the crate, and the GitHub release with every binary. CD ships what CI
+# built: the musl binaries are what the image holds and what the release
+# attaches, as are the Windows binary and the glibc and macOS release builds,
+# which start alongside the checks rather than after them. Nothing is
+# published until all of them and `Checks` have passed.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  # GitHub evicts a cache after 7 days without a read, and this repo goes quiet
-  # for longer than that. A run restores every cache, and a restore is a read,
-  # so a tick twice a week keeps main warm through the gaps. Nothing here
-  # publishes on a schedule — those jobs all gate on a push event.
+  # GitHub evicts a cache after 7 days without a read, and this repository
+  # goes quiet for longer than that. A run restores every cache, and a restore
+  # is a read, so a tick twice a week keeps them warm through the gaps. It
+  # runs every domain, as a manual run does, and releases only a version that
+  # is not out yet.
   schedule:
     - cron: "0 6 * * 1,4"
   # Releases whatever version is not yet released: how a failed release is
   # retried.
   workflow_dispatch:
 
-# A pull request's newer push cancels its older run. Runs on main are never
-# cancelled, since any of them may be publishing a release, and a manual run
-# is in a group of its own.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 env:
   CARGO_TERM_COLOR: always
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE: ghcr.io/${{ github.repository }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# A pull request's newer push cancels its older run; on main, a newer push
+# cancels an older one that releases nothing. A run that may release is in a
+# group of its own and is never cancelled, and nor is a manual or scheduled
+# run, either of which can retry a release. The group is chosen before any
+# job runs, so it cannot ask `changes`. A push may release when its head
+# commit is titled `release: ` (as `just release` names its pull request) or
+# changes `Cargo.toml`: the second catches a version bump merged under any
+# other title, at the cost of also keeping a dependency change from being
+# cancelled.
+concurrency:
+  group: "ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name != 'push' && format('{0}-{1}', github.event_name, github.run_id) || (startsWith(github.event.head_commit.message, 'release: ') || contains(github.event.head_commit.modified, 'Cargo.toml')) && format('release-{0}', github.sha) || 'main' }}"
+  cancel-in-progress: "${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'release: ') && !contains(github.event.head_commit.modified, 'Cargo.toml')) }}"
+
 jobs:
+  # ── CI ──────────────────────────────────────────────────────────────────
+
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      apple: ${{ steps.filter.outputs.apple }}
+      windows: ${{ steps.filter.outputs.windows }}
+      docker: ${{ steps.filter.outputs.docker }}
+      release: ${{ steps.filter.outputs.release }}
+      version: ${{ steps.filter.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        # The domains a change touches, from its diff. A pull request's is
+        # against its base. A push's is against the last commit on main whose
+        # run passed, so a push whose run was cancelled by the next one still
+        # reaches CD with it; without one in recent history, the commit
+        # before. A manual or scheduled run, or a diff that cannot be worked
+        # out, runs everything.
+        #
+        # Allowlists, so the question is "did any source of this domain
+        # change?" rather than "was everything recognisably irrelevant?". The
+        # cost is that a new top-level directory of code is invisible here
+        # until it is added below. Markdown is documentation wherever it sits.
+        # bench/ and techempower/ are tools run by hand and belong to no
+        # domain.
+        #
+        # One crate, so the lockfile reaches every domain and needs no finer
+        # question. The justfile and .mise.toml reach none: no job here runs
+        # a recipe or installs a tool through mise.
+        #
+        # Steps run under `bash -e`, where grep finding nothing is a failing
+        # command rather than an answer, so every question is asked in a
+        # condition.
+        run: |
+          rust=true apple=true windows=true docker=true release=false
+          version_of() { sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
+          # A pull request merged or closed as its run was created: the
+          # cancelling workflow can look before this run is listed, and the
+          # run would otherwise hold runners for a change that is already in.
+          # Unanswered, it counts as open.
+          state=OPEN
+          if [ "$EVENT" = "pull_request" ]; then
+            state=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json state --jq .state 2>/dev/null || echo OPEN)
+          fi
+          base=HEAD^1
+          if [ "$EVENT" = "push" ]; then
+            base=
+            passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci-cd.yml --branch main --event push \
+              --status success --limit 1 --json headSha --jq '.[0].headSha // empty' || true)
+            if [ "$passed" = "$(git rev-parse HEAD)" ]; then
+              base=HEAD^1
+            elif [ -n "$passed" ] && git fetch -q --deepen=200 origin main && git merge-base --is-ancestor "$passed" HEAD; then
+              base=$passed
+            else
+              echo "::notice::no passed run on main within reach -- running everything"
+            fi
+          fi
+          # Whether this run releases, the one answer every release job reads.
+          # A pull request: a release PR (branch `release-v*`, or a version
+          # change), which runs everything. A push to main: it changes the
+          # version and that version is not out yet. Comparing with the latest
+          # release instead would let a push that lands while a release runs
+          # release it again. A manual or scheduled run on main: whatever
+          # version is not out yet, which is how a failed release is retried,
+          # unless another run on main is still going, which may be releasing
+          # it. Only "not found" means not out; any other answer fails the run
+          # rather than guess.
+          version=$(version_of < Cargo.toml)
+          bumped=false
+          if [ "$(git show HEAD^1:Cargo.toml 2>/dev/null | version_of)" != "$version" ]; then
+            bumped=true
+          fi
+          case "$EVENT" in
+            pull_request)
+              case "$HEAD_REF" in release-v*) bumped=true ;; esac
+              release=$bumped
+              ;;
+            *)
+              busy=0
+              if [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$EVENT" != "push" ]; then
+                busy=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci-cd.yml --branch main --limit 20 \
+                  --json databaseId,status --jq "[.[] | select(.status != \"completed\" and .databaseId != $GITHUB_RUN_ID)] | length")
+              fi
+              if [ "$busy" != 0 ]; then
+                echo "::notice::another run on main is in progress and may be releasing v$version; this run releases nothing"
+              elif [ "$GITHUB_REF" = "refs/heads/main" ] && { [ "$EVENT" != "push" ] || [ "$bumped" = true ]; }; then
+                if err=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" 2>&1 > /dev/null); then
+                  echo "v$version is already released"
+                elif printf '%s' "$err" | grep -q 'HTTP 404'; then
+                  release=true
+                else
+                  echo "::error::cannot tell whether v$version is released: $err"
+                  exit 1
+                fi
+              fi
+              ;;
+          esac
+          touches() { printf '%s\n' "$files" | grep -E "$1" | grep -qvE '\.md$'; }
+          # Rust source or a manifest changed within twenty lines of a cfg
+          # matching $1, before or after.
+          near() { git diff -U20 "$base" HEAD -- '*.rs' '*.toml' | grep -E '^[ +-]' | grep -qE "$1"; }
+          if [ "$state" != "OPEN" ]; then
+            echo "pull request #$PR is no longer open -- skipping everything"
+            rust=false apple=false windows=false docker=false release=false
+          elif { [ "$EVENT" = "push" ] || [ "$EVENT" = "pull_request" ]; } && [ -n "$base" ] && files=$(git diff --name-only "$base" HEAD); then
+            echo "changes since $(git rev-parse --short "$base"):"
+            printf '%s\n' "$files" | sed 's/^/  /'
+
+            # Anything cargo compiles or that decides how.
+            touches '^src/|^tests/|^benches/|^examples/|^build\.rs$|^Cargo\.(toml|lock)$|^\.cargo/|^rust-toolchain|^\.github/' || rust=false
+            # The image is the musl binaries in a scratch layer. The Rust
+            # checks already cover the code, so a pull request builds them and
+            # the image only when the recipe changed; main whenever the binary
+            # did, since CD ships it.
+            if [ "$EVENT" = "pull_request" ] || [ "$rust" = false ]; then
+              touches '^Dockerfile$|^\.github/' || docker=false
+            fi
+
+            # macOS and Windows runners are slower to come by and slower to
+            # run than Linux, which already checks almost everything. A pull
+            # request takes one only for what Linux cannot see: dependencies,
+            # toolchain or build configuration, or code near a cfg for that
+            # platform. Main runs both for any Rust change, so whatever slips
+            # past a pull request is caught there.
+            native='^Cargo\.(toml|lock)$|^build\.rs$|^\.cargo/|^rust-toolchain|^\.github/'
+            apple=false
+            if touches "$native" || near 'target_os = "(macos|ios)"|target_vendor = "apple"'; then
+              apple=true
+            fi
+            windows=false
+            if touches "$native" || near 'cfg\((not\()?(unix|windows)|target_(os|family) = "(windows|unix)"|target_env = "msvc"'; then
+              windows=true
+            fi
+            if [ "$EVENT" != "pull_request" ] && [ "$rust" = true ]; then
+              apple=true windows=true
+            fi
+          fi
+          if [ "$release" = true ]; then
+            rust=true apple=true windows=true docker=true
+          fi
+          {
+            echo "rust=$rust"
+            echo "apple=$apple"
+            echo "windows=$windows"
+            echo "docker=$docker"
+            echo "release=$release"
+            echo "version=$version"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  # GitHub has no priority among its runners, and the account's few macOS
+  # ones are what a release waits on. A release cancels this repository's
+  # pull request runs, which are re-run from their page or by the next push,
+  # and main's earlier non-release runs, which a newer one supersedes. At the
+  # start rather than in CD, so the release builds that start alongside the
+  # checks find the runners free. A job of its own, so only it holds a token
+  # that can cancel runs. Best effort: the release builds wait on it, so a
+  # failed lookup or cancel is passed over rather than failing the job.
+  make-room:
+    name: Make room for the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: changes
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.changes.outputs.release == 'true'
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      # A push that changes Cargo.toml may be a release of its own, as the
+      # workflow's concurrency group treats it, so it is left to run.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SELF: ${{ github.run_id }}
+        run: |
+          for status in requested queued pending waiting in_progress; do
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow ci-cd.yml --status "$status" --limit 100 \
+              --json databaseId,event,headBranch,headSha,displayTitle \
+              --jq '.[] | select(.event == "pull_request" or (.event == "push" and .headBranch == "main" and (.displayTitle | startswith("release: ") | not))) | "\(.databaseId) \(.event) \(.headSha)"' || true
+          done | sort -u | while read -r id event sha; do
+            [ "$id" = "$SELF" ] && continue
+            if [ "$event" = "push" ] && gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.files[].filename' | grep -qx Cargo.toml; then
+              continue
+            fi
+            echo "cancelling run $id"
+            gh run cancel "$id" --repo "$GITHUB_REPOSITORY" || true
+          done
+
+  # Format, clippy and the tests on one runner, with one target directory and
+  # one cache: clippy compiles the dependency graph and the tests reuse it.
+  # Each check runs however an earlier one went, so one push reports every
+  # failure.
   check:
     name: Check
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
         with:
           toolchain: stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+          components: rustfmt, clippy
+      - id: cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # A pull request restores main's cache but writes none of its own: a
           # branch's cache is invisible to every other branch and still evicts
           # from the repository's 10GB, which is how main ends up cold.
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # One job, one target directory: clippy compiles the dependency graph and
-      # the tests reuse it, where two jobs each built it into a cache of its own.
-      # fmt compiles nothing, so it goes first and fails cheapest.
-      - name: Check
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --all-targets --all-features --locked -- -D warnings
-          cargo test --all-features --locked
+          shared-key: check
+          # A failing check would otherwise leave the cache unsaved.
+          cache-on-failure: true
+      - run: cargo fmt --all -- --check
+      - if: ${{ !cancelled() && steps.cache.outcome == 'success' }}
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - if: ${{ !cancelled() && steps.cache.outcome == 'success' }}
+        run: cargo test --all-features --locked
 
   # CHANGELOG.md is generated from changelog.d/ (scripts/changelog.py). A pull
   # request adds fragments without regenerating it, so only its fragments and
@@ -64,8 +291,11 @@ jobs:
   changelog:
     name: Changelog
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       - run: python3 -m unittest scripts/test_changelog.py
@@ -78,168 +308,235 @@ jobs:
             python3 scripts/changelog.py --lint
           fi
 
-  # Runs on pull requests too, since build-image and apple read its outputs;
-  # only a push or manual run on main can release.
-  check-version:
-    name: Check Version
-    runs-on: ubuntu-latest
-    outputs:
-      should_release: ${{ steps.check.outputs.should_release }}
-      version: ${{ steps.check.outputs.version }}
-      major: ${{ steps.check.outputs.major }}
-      major_minor: ${{ steps.check.outputs.major_minor }}
-      apple: ${{ steps.apple.outputs.apple }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 2
-
-      # A push releases only when it changes the version. Comparing with the
-      # latest GitHub release alone would let a push that lands while a release
-      # is still running release the same version a second time. A manual run
-      # releases whatever is unreleased.
-      - name: Check if release needed
-        id: check
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-        run: |
-          version_of() { sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
-          CURRENT_VERSION=$(version_of < Cargo.toml)
-          PREVIOUS_VERSION=$(git show HEAD^:Cargo.toml 2>/dev/null | version_of || true)
-          LATEST_RELEASE=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
-          LATEST_VERSION=${LATEST_RELEASE#v}
-          if [ "$REF" != "refs/heads/main" ] || { [ "$EVENT" != "push" ] && [ "$EVENT" != "workflow_dispatch" ]; }; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          elif [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
-          MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
-          MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
-          echo "major=${MAJOR}" >> "$GITHUB_OUTPUT"
-          echo "major_minor=${MAJOR}.${MINOR}" >> "$GITHUB_OUTPUT"
-
-      # nano-web has no Apple-only code, so Linux checks almost everything a
-      # pull request can break on macOS. What it cannot check is a change to
-      # the dependencies, the toolchain, the build configuration or the
-      # workflow, or Rust code gated on an Apple target; only those pull
-      # requests take a macOS runner. The release pull request bumps the
-      # version in Cargo.toml, so it always does.
-      - name: Check if the change needs macOS
-        id: apple
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          apple=false
-          if [ "$EVENT" = "pull_request" ]; then
-            if git diff --name-only HEAD^1 HEAD | grep -qE '^(Cargo\.(toml|lock)|build\.rs|rust-toolchain(\.toml)?|\.mise\.toml|\.cargo/|\.github/workflows/)' \
-              || git diff HEAD^1 HEAD -- '*.rs' | grep -qE '^[+-].*target_(os|vendor) *= *"(macos|apple)"'; then
-              apple=true
-            fi
-          fi
-          echo "apple=$apple" >> "$GITHUB_OUTPUT"
-
-  build-binaries:
-    name: Build ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      # A cancelled leg saves nothing, so one broken target would leave the rest
-      # of the matrix cold on the next run as well as this one.
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            name: nano-web-linux-amd64-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            name: nano-web-linux-arm64-gnu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: nano-web-windows-amd64.exe
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          key: ${{ matrix.target }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Build binary
-        run: cargo build --release --locked --target ${{ matrix.target }}
-
-      - name: Prepare binary
-        shell: bash
-        run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cp target/${{ matrix.target }}/release/nano-web.exe ${{ matrix.name }}
-          else
-            cp target/${{ matrix.target }}/release/nano-web ${{ matrix.name }}
-          fi
-
-      - name: Upload binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ matrix.name }}
-          path: ${{ matrix.name }}
-
-  # Every macOS step in one job on one runner, sharing one target directory
-  # and one cache: the account has few macOS runners and every repository
-  # queues for them. A pull request that needs macOS runs clippy, the tests
-  # and the release build; a release builds, notarises and uploads the binary
-  # its pull request already checked; the scheduled run does all of it to keep
-  # the cache warm. Anything else skips the job, which then holds no runner.
+  # Clippy and the tests on macOS, in the profile pull requests build, so main
+  # saves the cache they start from. A release pull request also builds the
+  # release binary, unsigned, so a broken release build fails before the
+  # version merges. A release push is not checked again: its pull request and
+  # main's previous push were, and its build belongs to `macos-release`.
   apple:
     name: Apple
     runs-on: macos-latest
-    needs: [check-version]
-    if: needs.check-version.outputs.should_release == 'true' || needs.check-version.outputs.apple == 'true' || github.event_name == 'schedule'
-    env:
-      RELEASE: ${{ needs.check-version.outputs.should_release }}
+    needs: changes
+    if: needs.changes.outputs.apple == 'true' && !(github.event_name != 'pull_request' && needs.changes.outputs.release == 'true')
+    timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
         with:
           toolchain: stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+          components: clippy
+      - id: cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: aarch64-apple-darwin
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Check
-        if: env.RELEASE != 'true'
-        run: |
-          cargo clippy --all-targets --all-features --locked -- -D warnings
-          cargo test --all-features --locked
-
-      - name: Build binary
+          shared-key: apple
+          cache-on-failure: true
+      - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - if: ${{ !cancelled() && steps.cache.outcome == 'success' }}
+        run: cargo test --all-features --locked
+      - if: ${{ !cancelled() && steps.cache.outcome == 'success' && needs.changes.outputs.release == 'true' }}
         run: cargo build --release --locked
 
-      # Developer ID signed and notarised, so the binary runs from a browser
-      # download without clearing quarantine.
-      - name: Sign and notarise
-        if: env.RELEASE == 'true'
-        uses: radiosilence/blit-workflows/macos-notarise@c8a650dfa5a0fbe012c61eab28f615c1983aee18
+  # The static musl binaries, in release, once: the image is built from them
+  # and a release attaches them. Built on the runners, each on its own
+  # architecture, with the Rust cache, rather than inside Docker.
+  image-build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: nano-web-linux-amd64-musl
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - name: nano-web-linux-arm64-musl
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: ${{ matrix.target }}
+          cache-on-failure: true
+      - run: |
+          cargo build --release --locked --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/nano-web ${{ matrix.name }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+          retention-days: ${{ github.event_name != 'pull_request' && needs.changes.outputs.release == 'true' && 90 || 7 }}
+
+  # The binaries above in a scratch image, for both architectures. Nothing in
+  # it runs at build time, so neither architecture needs emulation, and there
+  # is no layer worth caching. A pull request builds it to prove it builds.
+  # Main pushes it under the commit, in parallel with the checks: nothing
+  # deploys a commit tag, and CD moves `main`, and a release's version tags
+  # and `latest`, onto it only once `Checks` has passed.
+  container:
+    name: Container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [changes, image-build]
+    if: ${{ !cancelled() && needs.image-build.result == 'success' }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: nano-web-linux-*-musl
+          path: dist
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - if: env.PUSH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          # The build record would be uploaded as an artifact of this run,
+          # beside the binaries the release downloads.
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: dist
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          # Read by `container-main` to tell which commit `main` points at.
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+
+  # Windows checks only that the code compiles there, which Linux cannot see,
+  # and the build is the binary a release attaches.
+  windows:
+    name: Build (nano-web-windows-amd64.exe)
+    runs-on: windows-2025
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: windows
+          cache-on-failure: true
+      - shell: bash
+        run: |
+          cargo build --release --locked
+          cp target/release/nano-web.exe nano-web-windows-amd64.exe
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nano-web-windows-amd64.exe
+          path: nano-web-windows-amd64.exe
+          retention-days: ${{ github.event_name != 'pull_request' && needs.changes.outputs.release == 'true' && 90 || 7 }}
+
+  # The glibc binaries, which only a release ships: `check` already compiles
+  # the same code for Linux. They publish nothing, so they start alongside the
+  # checks, after `make-room` on main; a release pull request builds them
+  # too, so a broken release build fails before the version merges.
+  release-build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    needs: [changes, make-room]
+    if: ${{ !cancelled() && needs.changes.outputs.release == 'true' && (needs.make-room.result == 'success' || needs.make-room.result == 'skipped') }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: nano-web-linux-amd64-gnu
+            runner: ubuntu-24.04
+          - name: nano-web-linux-arm64-gnu
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: ${{ matrix.name }}
+          cache-on-failure: true
+      - run: |
+          cargo build --release --locked
+          cp target/release/nano-web ${{ matrix.name }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+          retention-days: ${{ github.event_name != 'pull_request' && needs.changes.outputs.release == 'true' && 90 || 7 }}
+
+  # The one status the ruleset requires. Skipped jobs are domains the change
+  # does not touch and pass; anything failed or cancelled fails it.
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [changes, check, changelog, apple, image-build, container, windows, release-build]
+    if: always()
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          bad=$(echo "$NEEDS" | jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key] | join(" ")')
+          if [ -n "$bad" ]; then
+            echo "::error::not passed: $bad"
+            exit 1
+          fi
+
+  # ── CD ──────────────────────────────────────────────────────────────────
+  #
+  # Main only, after `Checks`. `checks` runs whatever its needs did, so every
+  # job here states the results it depends on rather than relying on the
+  # default, which would skip it whenever any job upstream was skipped.
+
+  # The macOS binary in release, Developer ID signed and notarised, so it runs
+  # from a browser download without clearing quarantine. Started by `changes`
+  # rather than after `Checks`: it is the longest job in a release and
+  # publishes nothing, so it builds while the checks run, and the publishing
+  # waits for both. After `make-room`, which frees the macOS runners for it.
+  macos-release:
+    name: Release (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    needs: [changes, make-room]
+    if: ${{ !cancelled() && needs.make-room.result == 'success' && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: apple-release
+          cache-on-failure: true
+      - run: cargo build --release --locked
+      - uses: radiosilence/blit-workflows/macos-notarise@c8a650dfa5a0fbe012c61eab28f615c1983aee18
         with:
           binaries: |
             target/release/nano-web
@@ -248,258 +545,221 @@ jobs:
           api-key-p8: ${{ secrets.APPLE_API_KEY_P8 }}
           api-key-id: ${{ secrets.APPLE_API_KEY_ID }}
           api-issuer-id: ${{ secrets.APPLE_API_ISSUER_ID }}
-
-      - name: Prepare binary
-        if: env.RELEASE == 'true'
-        run: cp target/release/nano-web nano-web-macos-arm64
-
-      - name: Upload binary
-        if: env.RELEASE == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - run: cp target/release/nano-web nano-web-macos-arm64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nano-web-macos-arm64
           path: nano-web-macos-arm64
 
-  # Compiles the musl binary and ships it straight into the image on the same
-  # runner. Kept out of build-binaries so the image never waits on the Windows
-  # leg; kept in one job so the binary never round-trips through the
-  # artifact store, which would cost a runner handoff and drop its exec bit.
-  # Runs on PRs too — only the registry push is gated, via PUBLISH, to a push
-  # or manual run on main.
-  build-image:
-    name: Build ${{ matrix.arch }} Image
-    runs-on: ${{ matrix.runner }}
-    needs: [check-version]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-    permissions:
-      contents: read
-      packages: write
-    env:
-      PUBLISH: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install musl tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends musl-tools
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          key: ${{ matrix.target }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Build binary
-        run: cargo build --release --locked --target ${{ matrix.target }}
-
-      # Same file feeds the image build and the release asset.
-      - name: Prepare binary
-        run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/nano-web \
-            dist/nano-web-linux-${{ matrix.arch }}-musl
-
-      - name: Upload binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: nano-web-linux-${{ matrix.arch }}-musl
-          path: dist/nano-web-linux-${{ matrix.arch }}-musl
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
-
-      - name: Log in to Container Registry
-        if: env.PUBLISH == 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # On PRs this still builds — it just discards the result instead of
-      # pushing, so a broken Dockerfile fails before merge rather than after.
-      - name: Build ${{ matrix.arch }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: ${{ matrix.platform }}
-          push: ${{ env.PUBLISH == 'true' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ matrix.arch }}
-
-      - name: Tag ${{ matrix.arch }} with version
-        if: env.PUBLISH == 'true' && needs.check-version.outputs.should_release == 'true'
-        run: |
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-version.outputs.version }}-${{ matrix.arch }} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ matrix.arch }}
-
-  create-manifest:
-    name: Push Docker Image
+  # `main` follows the newest commit whose checks passed and whose binary
+  # changed. Runs that may release are never cancelled, so an older one can
+  # finish after a newer one; `main` moves only forward: not onto a commit
+  # behind the one the tag holds now, read from its revision label. Main's
+  # head is no guide, since a later push that builds no image moves it
+  # without retagging. Retagging needs no rebuild.
+  #
+  # A missing tag, a tag without the label, or a labelled commit that history
+  # no longer leads to (gone, or diverged after a force-push) retags. Any
+  # other failure is retried, then fails the job: retagging on a guess can
+  # move `main` backwards.
+  container-main:
+    name: Container image (main)
     runs-on: ubuntu-latest
-    needs: [check, changelog, build-image, check-version]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    timeout-minutes: 10
+    needs: [checks, container]
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.container.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    # One at a time across runs: two that read the tag together could both
+    # see their commit ahead, and the one finishing last would win.
+    concurrency:
+      group: container-main
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Log in to Container Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push main manifest
+      - env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-arm64
+          cd "$RUNNER_TEMP"
+          attempt() {
+            local n
+            for n in 1 2 3; do
+              "$@" && return 0
+              [ "$n" -lt 3 ] && sleep $((n * 10))
+            done
+            return 1
+          }
+          read_tag() {
+            if docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Image}}' > tag.json 2> tag.err; then
+              current=$(jq -r '[.. | objects | .config.Labels?["org.opencontainers.image.revision"]? // empty][0] // empty' tag.json)
+            elif grep -qF "$IMAGE:main: not found" tag.err; then
+              current=
+            else
+              cat tag.err >&2
+              return 1
+            fi
+          }
+          compare() {
+            if gh api "repos/$GITHUB_REPOSITORY/compare/$current...$GITHUB_SHA" --jq .status > compare.out 2> compare.err; then
+              status=$(cat compare.out)
+            elif grep -q 'HTTP 404' compare.err; then
+              status=gone
+            else
+              cat compare.err >&2
+              return 1
+            fi
+          }
+          attempt read_tag || { echo "::error::cannot read $IMAGE:main"; exit 1; }
+          if [ -n "$current" ] && [ "$current" != "$GITHUB_SHA" ]; then
+            attempt compare || { echo "::error::cannot compare $current with $GITHUB_SHA"; exit 1; }
+            case "$status" in
+              ahead) ;;
+              gone|diverged) echo "::notice::main holds $current, which history no longer leads to ($status); retagging" ;;
+              *)
+                echo "::notice::main holds $current, which this commit does not descend from ($status); leaving it"
+                exit 0
+                ;;
+            esac
+          fi
+          docker buildx imagetools create -t "$IMAGE:main" "$IMAGE:$GITHUB_SHA"
 
-      - name: Push release manifests
-        if: needs.check-version.outputs.should_release == 'true'
-        run: |
-          VERSION="${{ needs.check-version.outputs.version }}"
-          MAJOR="${{ needs.check-version.outputs.major }}"
-          MAJOR_MINOR="${{ needs.check-version.outputs.major_minor }}"
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
-
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
-
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
-
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${MAJOR_MINOR} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
-
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${MAJOR} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
-
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-arm64
-
-      - name: Show built images
-        run: |
-          VERSION="${{ needs.check-version.outputs.version }}"
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
-
-          echo "🐳 **Built Docker Images:**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Version: \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Available Tags:" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-  # Before the GitHub release: a version on crates.io cannot be taken back, so
-  # it goes out only once every check and build has passed. Publishing errors
-  # on a version already out, so a re-run checks the index first.
+  # A version on crates.io cannot be taken back, so it goes out once every
+  # build the release ships has passed, and once what the rest of the release
+  # needs is known to be in place: what follows it only retags the image and
+  # creates the GitHub release, and a retry passes through here because the
+  # index already has the version.
   publish-crate:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    needs: [check, changelog, build-binaries, apple, check-version, create-manifest]
-    if: needs.check-version.outputs.should_release == 'true'
+    timeout-minutes: 30
+    needs: [changes, checks, container, image-build, release-build, windows, macos-release]
+    # Every need having run, not merely not failed: a skipped job is not a
+    # failure, and a release without one of its parts is not a release.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    env:
+      VERSION: ${{ needs.changes.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        with:
-          toolchain: stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Publish to crates.io
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The rest of the release can follow
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
-          VERSION: ${{ needs.check-version.outputs.version }}
-        run: |
-          if curl -sf https://index.crates.io/na/no/nano-web | grep -q "\"vers\":\"${VERSION}\""; then
-            echo "nano-web ${VERSION} is already on crates.io"
-            exit 0
-          fi
-          cargo publish --locked
-
-  # The action creates the tag through the API, on the commit that was built:
-  # GitHub refuses a git push of it from the workflow token for any commit that
-  # changes a workflow. The notes are the version's section of CHANGELOG.md. A
-  # re-run finds the release and tag and fills in what is missing.
-  create-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [check-version, publish-crate]
-    if: needs.check-version.outputs.should_release == 'true'
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Release notes
-        env:
-          VERSION: ${{ needs.check-version.outputs.version }}
+          CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           awk -v h="## $VERSION" '$0==h{f=1;next} f&&/^## /{exit} f' CHANGELOG.md > notes.md
           if ! grep -q . notes.md; then
             echo "::error::CHANGELOG.md has no section for $VERSION"
             exit 1
           fi
+          for secret in CARGO_TOKEN RELEASE_TOKEN; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::$secret is not set; the release cannot be published"
+              exit 1
+            fi
+          done
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
+        with:
+          toolchain: stable
+      # The verification build is a debug build, which `Check` compiles on
+      # every push to main, so its cache is read rather than one of this
+      # job's own. rust-cache hashes CARGO_* variables into the key, so the
+      # registry token is set on the publishing step alone.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: check
+          save-if: false
+      - env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
+        run: |
+          if curl -sf https://index.crates.io/na/no/nano-web | grep -q "\"vers\":\"${VERSION}\""; then
+            echo "nano-web ${VERSION} is already on crates.io"
+            exit 0
+          fi
+          cargo publish --locked
+      # `cargo publish` unpacks the crate under target/package, and the cache
+      # step's clean-up of target trips over what it left there.
+      - if: always()
+        run: rm -rf target/package
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+  # The image this commit already pushed, tagged with the release's version,
+  # its major and minor, its short commit and `latest`, once the crate is out:
+  # a failed release must not move `latest`. Retagging needs no rebuild, and
+  # repeats safely.
+  container-release:
+    name: Container image (release tags)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [changes, publish-crate]
+    if: ${{ !cancelled() && needs.publish-crate.result == 'success' && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.changes.outputs.version }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          major=$(echo "$VERSION" | cut -d. -f1)
+          major_minor=$(echo "$VERSION" | cut -d. -f1,2)
+          docker buildx imagetools create \
+            -t "$IMAGE:latest" -t "$IMAGE:$VERSION" -t "$IMAGE:$major_minor" -t "$IMAGE:$major" \
+            -t "$IMAGE:${GITHUB_SHA:0:8}" \
+            "$IMAGE:$GITHUB_SHA"
+          {
+            echo "### Image tags"
+            echo '```bash'
+            echo "docker pull $IMAGE:latest"
+            echo "docker pull $IMAGE:$VERSION"
+            echo "docker pull $IMAGE:${GITHUB_SHA:0:8}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+  # Last, since it is what marks the version as out: a retry, manual or
+  # scheduled, releases only a version without one. The action creates the
+  # tag through the API, on the commit that was built: GitHub refuses a git
+  # push of it from the workflow token for any commit that changes a
+  # workflow. The notes are the version's section of CHANGELOG.md. A re-run
+  # finds the release and tag and fills in what is missing.
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [changes, checks, image-build, release-build, windows, macos-release, publish-crate, container-release]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.changes.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: awk -v h="## $VERSION" '$0==h{f=1;next} f&&/^## /{exit} f' CHANGELOG.md > notes.md
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: nano-web-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
-          tag_name: v${{ needs.check-version.outputs.version }}
+          tag_name: v${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
-          name: v${{ needs.check-version.outputs.version }}
-          draft: false
-          prerelease: false
+          name: v${{ env.VERSION }}
           body_path: notes.md
+          fail_on_unmatched_files: true
           files: |
-            nano-web-linux-amd64-gnu/nano-web-linux-amd64-gnu
-            nano-web-linux-arm64-gnu/nano-web-linux-arm64-gnu
-            nano-web-linux-amd64-musl/nano-web-linux-amd64-musl
-            nano-web-linux-arm64-musl/nano-web-linux-arm64-musl
-            nano-web-macos-arm64/nano-web-macos-arm64
-            nano-web-windows-amd64.exe/nano-web-windows-amd64.exe
+            artifacts/nano-web-linux-amd64-gnu
+            artifacts/nano-web-linux-arm64-gnu
+            artifacts/nano-web-linux-amd64-musl
+            artifacts/nano-web-linux-arm64-musl
+            artifacts/nano-web-macos-arm64
+            artifacts/nano-web-windows-amd64.exe
