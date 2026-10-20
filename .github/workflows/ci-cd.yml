@@ -11,11 +11,16 @@ on:
   # publishes on a schedule — those jobs all gate on a push event.
   schedule:
     - cron: "0 6 * * 1,4"
+  # Releases whatever version is not yet released: how a failed release is
+  # retried.
   workflow_dispatch:
 
+# A pull request's newer push cancels its older run. Runs on main are never
+# cancelled, since any of them may be publishing a release, and a manual run
+# is in a group of its own.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -52,6 +57,29 @@ jobs:
           cargo clippy --all-targets --all-features --locked -- -D warnings
           cargo test --all-features --locked
 
+  # CHANGELOG.md is generated from changelog.d/ (scripts/changelog.py). A pull
+  # request adds fragments without regenerating it, so only its fragments and
+  # the released versions are checked; one that writes CHANGELOG.md, as a
+  # release does, must write exactly what the fragments make.
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 2
+      - run: python3 -m unittest scripts/test_changelog.py
+      - env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "pull_request" ] && git diff --name-only HEAD^1 HEAD | grep -qx CHANGELOG.md; then
+            python3 scripts/changelog.py --check
+          else
+            python3 scripts/changelog.py --lint
+          fi
+
+  # Runs on pull requests too, since build-image and apple read its outputs;
+  # only a push or manual run on main can release.
   check-version:
     name: Check Version
     runs-on: ubuntu-latest
@@ -60,35 +88,63 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       major: ${{ steps.check.outputs.major }}
       major_minor: ${{ steps.check.outputs.major_minor }}
+      apple: ${{ steps.apple.outputs.apple }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 2
 
-      - name: Check if version changed
+      # A push releases only when it changes the version. Comparing with the
+      # latest GitHub release alone would let a push that lands while a release
+      # is still running release the same version a second time. A manual run
+      # releases whatever is unreleased.
+      - name: Check if release needed
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
-          CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "Current version: $CURRENT_VERSION"
-
-          # Use GitHub releases API — tags are output-only, not input
+          version_of() { sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
+          CURRENT_VERSION=$(version_of < Cargo.toml)
+          PREVIOUS_VERSION=$(git show HEAD^:Cargo.toml 2>/dev/null | version_of || true)
           LATEST_RELEASE=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
           LATEST_VERSION=${LATEST_RELEASE#v}
-          echo "Latest release: $LATEST_VERSION"
-
-          if [ -z "$LATEST_RELEASE" ] || [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
-            echo "Version changed: $LATEST_VERSION -> $CURRENT_VERSION"
-            echo "should_release=true" >> $GITHUB_OUTPUT
+          if [ "$REF" != "refs/heads/main" ] || { [ "$EVENT" != "push" ] && [ "$EVENT" != "workflow_dispatch" ]; }; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          elif [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Version unchanged"
-            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
-          echo "major_minor=${MAJOR}.${MINOR}" >> $GITHUB_OUTPUT
+          echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+          MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+          echo "major=${MAJOR}" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${MAJOR}.${MINOR}" >> "$GITHUB_OUTPUT"
+
+      # nano-web has no Apple-only code, so Linux checks almost everything a
+      # pull request can break on macOS. What it cannot check is a change to
+      # the dependencies, the toolchain, the build configuration or the
+      # workflow, or Rust code gated on an Apple target; only those pull
+      # requests take a macOS runner. The release pull request bumps the
+      # version in Cargo.toml, so it always does.
+      - name: Check if the change needs macOS
+        id: apple
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          apple=false
+          if [ "$EVENT" = "pull_request" ]; then
+            if git diff --name-only HEAD^1 HEAD | grep -qE '^(Cargo\.(toml|lock)|build\.rs|rust-toolchain(\.toml)?|\.mise\.toml|\.cargo/|\.github/workflows/)' \
+              || git diff HEAD^1 HEAD -- '*.rs' | grep -qE '^[+-].*target_(os|vendor) *= *"(macos|apple)"'; then
+              apple=true
+            fi
+          fi
+          echo "apple=$apple" >> "$GITHUB_OUTPUT"
 
   build-binaries:
     name: Build ${{ matrix.name }}
@@ -105,12 +161,6 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             name: nano-web-linux-arm64-gnu
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            name: nano-web-macos-arm64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            name: nano-web-macos-amd64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: nano-web-windows-amd64.exe
@@ -133,19 +183,6 @@ jobs:
       - name: Build binary
         run: cargo build --release --locked --target ${{ matrix.target }}
 
-      # Developer ID signed and notarised, so the tarball runs from a browser
-      # download without clearing quarantine. Pull requests stay ad-hoc signed.
-      - name: Sign and notarise (macOS)
-        if: runner.os == 'macOS' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.event_name != 'schedule'
-        uses: radiosilence/blit-workflows/macos-notarise@c8a650dfa5a0fbe012c61eab28f615c1983aee18
-        with:
-          binaries: |
-            target/${{ matrix.target }}/release/nano-web
-          certificate-p12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          certificate-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          api-key-p8: ${{ secrets.APPLE_API_KEY_P8 }}
-          api-key-id: ${{ secrets.APPLE_API_KEY_ID }}
-          api-issuer-id: ${{ secrets.APPLE_API_ISSUER_ID }}
       - name: Prepare binary
         shell: bash
         run: |
@@ -161,11 +198,74 @@ jobs:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
 
+  # Every macOS step in one job on one runner, sharing one target directory
+  # and one cache: the account has few macOS runners and every repository
+  # queues for them. A pull request that needs macOS runs clippy, the tests
+  # and the release build; a release builds, notarises and uploads the binary
+  # its pull request already checked; the scheduled run does all of it to keep
+  # the cache warm. Anything else skips the job, which then holds no runner.
+  apple:
+    name: Apple
+    runs-on: macos-latest
+    needs: [check-version]
+    if: needs.check-version.outputs.should_release == 'true' || needs.check-version.outputs.apple == 'true' || github.event_name == 'schedule'
+    env:
+      RELEASE: ${{ needs.check-version.outputs.should_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: aarch64-apple-darwin
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check
+        if: env.RELEASE != 'true'
+        run: |
+          cargo clippy --all-targets --all-features --locked -- -D warnings
+          cargo test --all-features --locked
+
+      - name: Build binary
+        run: cargo build --release --locked
+
+      # Developer ID signed and notarised, so the binary runs from a browser
+      # download without clearing quarantine.
+      - name: Sign and notarise
+        if: env.RELEASE == 'true'
+        uses: radiosilence/blit-workflows/macos-notarise@c8a650dfa5a0fbe012c61eab28f615c1983aee18
+        with:
+          binaries: |
+            target/release/nano-web
+          certificate-p12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          certificate-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          api-key-p8: ${{ secrets.APPLE_API_KEY_P8 }}
+          api-key-id: ${{ secrets.APPLE_API_KEY_ID }}
+          api-issuer-id: ${{ secrets.APPLE_API_ISSUER_ID }}
+
+      - name: Prepare binary
+        if: env.RELEASE == 'true'
+        run: cp target/release/nano-web nano-web-macos-arm64
+
+      - name: Upload binary
+        if: env.RELEASE == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nano-web-macos-arm64
+          path: nano-web-macos-arm64
+
   # Compiles the musl binary and ships it straight into the image on the same
-  # runner. Kept out of build-binaries so the image never waits on the macOS or
-  # Windows legs; kept in one job so the binary never round-trips through the
+  # runner. Kept out of build-binaries so the image never waits on the Windows
+  # leg; kept in one job so the binary never round-trips through the
   # artifact store, which would cost a runner handoff and drop its exec bit.
-  # Runs on PRs too — only the registry push is main-gated, via PUBLISH.
+  # Runs on PRs too — only the registry push is gated, via PUBLISH, to a push
+  # or manual run on main.
   build-image:
     name: Build ${{ matrix.arch }} Image
     runs-on: ${{ matrix.runner }}
@@ -186,7 +286,7 @@ jobs:
       contents: read
       packages: write
     env:
-      PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      PUBLISH: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -256,8 +356,8 @@ jobs:
   create-manifest:
     name: Push Docker Image
     runs-on: ubuntu-latest
-    needs: [check, build-image, check-version]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [check, changelog, build-image, check-version]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
       packages: write
@@ -325,50 +425,13 @@ jobs:
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-  create-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [check, build-binaries, check-version, create-manifest]
-    if: >-
-      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
-      needs.check-version.outputs.should_release == 'true'
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-
-      - name: Create git tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ needs.check-version.outputs.version }}" -m "Release v${{ needs.check-version.outputs.version }}"
-          git push origin "v${{ needs.check-version.outputs.version }}"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
-        with:
-          tag_name: v${{ needs.check-version.outputs.version }}
-          name: v${{ needs.check-version.outputs.version }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            nano-web-linux-amd64-gnu/nano-web-linux-amd64-gnu
-            nano-web-linux-arm64-gnu/nano-web-linux-arm64-gnu
-            nano-web-linux-amd64-musl/nano-web-linux-amd64-musl
-            nano-web-linux-arm64-musl/nano-web-linux-arm64-musl
-            nano-web-macos-arm64/nano-web-macos-arm64
-            nano-web-macos-amd64/nano-web-macos-amd64
-            nano-web-windows-amd64.exe/nano-web-windows-amd64.exe
-
+  # Before the GitHub release: a version on crates.io cannot be taken back, so
+  # it goes out only once every check and build has passed. Publishing errors
+  # on a version already out, so a re-run checks the index first.
   publish-crate:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    needs: [create-release]
+    needs: [check, changelog, build-binaries, apple, check-version, create-manifest]
     if: needs.check-version.outputs.should_release == 'true'
     steps:
       - name: Checkout
@@ -387,4 +450,56 @@ jobs:
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
-        run: cargo publish --locked
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          if curl -sf https://index.crates.io/na/no/nano-web | grep -q "\"vers\":\"${VERSION}\""; then
+            echo "nano-web ${VERSION} is already on crates.io"
+            exit 0
+          fi
+          cargo publish --locked
+
+  # The action creates the tag through the API, on the commit that was built:
+  # GitHub refuses a git push of it from the workflow token for any commit that
+  # changes a workflow. The notes are the version's section of CHANGELOG.md. A
+  # re-run finds the release and tag and fills in what is missing.
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [check-version, publish-crate]
+    if: needs.check-version.outputs.should_release == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Release notes
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          awk -v h="## $VERSION" '$0==h{f=1;next} f&&/^## /{exit} f' CHANGELOG.md > notes.md
+          if ! grep -q . notes.md; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          tag_name: v${{ needs.check-version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: v${{ needs.check-version.outputs.version }}
+          draft: false
+          prerelease: false
+          body_path: notes.md
+          files: |
+            nano-web-linux-amd64-gnu/nano-web-linux-amd64-gnu
+            nano-web-linux-arm64-gnu/nano-web-linux-arm64-gnu
+            nano-web-linux-amd64-musl/nano-web-linux-amd64-musl
+            nano-web-linux-arm64-musl/nano-web-linux-arm64-musl
+            nano-web-macos-arm64/nano-web-macos-arm64
+            nano-web-windows-amd64.exe/nano-web-windows-amd64.exe

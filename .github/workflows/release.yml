@@ -1,0 +1,60 @@
+name: Release
+
+# Opens the release pull request, as `just release` does at a terminal: a
+# branch from main with the version bumped and the changelog fragments turned
+# into the release. Merging that pull request is what publishes it.
+#
+# Pushes and opens the pull request with RELEASE_TOKEN. One opened with the
+# workflow token starts no workflows, so the release pull request would never
+# run CI and could never go green.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: An exact version (X.Y.Z) instead of a bump
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Open the release pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the release token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::RELEASE_TOKEN is not set; the release pull request cannot be opened"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          token: ${{ secrets.RELEASE_TOKEN }}
+      # Rust and just from .mise.toml, as a contributor's terminal has them.
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          install_args: rust just
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          BUMP: ${{ inputs.bump }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          just release "${VERSION:-$BUMP}"
