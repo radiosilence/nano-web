@@ -14,7 +14,7 @@ Static file server that loads a directory into memory at startup and serves each
 
 ## Releasing
 
-`just release patch|minor|major` (or an exact `X.Y.Z`), or the Release workflow, branches from main, bumps `Cargo.toml` and `Cargo.lock`, turns the unreleased fragments into the version and opens the release PR. Merging it is the release: CI tags the image with the version, publishes the crate, then creates the GitHub release with the binaries and the changelog section as notes. A push releases only when it changes the version and that version has no GitHub release yet; `gh workflow run ci-cd.yml` on main retries a release that failed part way, and the scheduled run does the same for any version left unreleased.
+`just release patch|minor|major` (or an exact `X.Y.Z`), or the Release workflow, branches from main, bumps `Cargo.toml` and `Cargo.lock`, turns the unreleased fragments into the version and opens the release PR. Merging it is the release: CI publishes the crate, tags the image with the version, then creates the GitHub release with the binaries and the changelog section as notes. A push releases only when it changes the version and that version has no GitHub release yet; `gh workflow run ci-cd.yml` on main retries a release that failed part way, and the scheduled run does the same for any version left unreleased.
 
 ## Check
 
