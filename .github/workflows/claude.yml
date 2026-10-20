@@ -1,0 +1,40 @@
+name: Claude Code
+
+# Answers an @claude mention in an issue, a pull request comment or a review.
+# Only the owner, members and collaborators can trigger it, since every run
+# spends the account's Claude usage.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned]
+
+jobs:
+  claude:
+    if: >-
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+        github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association) &&
+      (contains(github.event.comment.body || github.event.review.body || github.event.issue.body, '@claude') ||
+        (github.event_name == 'issues' && contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@db77d4d3c98f3f6380e7cd45ffba2342a3dbde3c # v1.0.254
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Lets Claude read CI results on pull requests.
+          additional_permissions: |
+            actions: read

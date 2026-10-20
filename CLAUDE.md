@@ -7,6 +7,7 @@ Static file server that loads a directory into memory at startup and serves each
 - Work in PRs; never push to main. PRs are squashed; merge main into a branch rather than rebasing.
 - Never push tags or run `cargo publish`. CI tags and publishes when a release PR merges.
 - Commits are signed.
+- Claude Code Review reviews each pull request on open and push; `@claude` in a comment asks it again.
 
 ## Changelog
 
