@@ -553,14 +553,26 @@ jobs:
 
   # `main` follows the newest commit whose checks passed and whose binary
   # changed. Runs that may release are never cancelled, so an older one can
-  # finish after a newer one; `main` moves only forward. Retagging needs no
-  # rebuild.
+  # finish after a newer one; `main` moves only forward: not onto a commit
+  # behind the one the tag holds now, read from its revision label. Main's
+  # head is no guide, since a later push that builds no image moves it
+  # without retagging. Retagging needs no rebuild.
+  #
+  # A missing tag, a tag without the label, or a labelled commit that history
+  # no longer leads to (gone, or diverged after a force-push) retags. Any
+  # other failure is retried, then fails the job: retagging on a guess can
+  # move `main` backwards.
   container-main:
     name: Container image (main)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [checks, container]
     if: ${{ !cancelled() && needs.checks.result == 'success' && needs.container.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    # One at a time across runs: two that read the tag together could both
+    # see their commit ahead, and the one finishing last would win.
+    concurrency:
+      group: container-main
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -574,28 +586,46 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Only a missing tag or label means there is nothing to protect; any
-          # other registry error fails rather than risk moving `main` back.
-          current=
-          if image=$(docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Image}}' 2> "$RUNNER_TEMP/inspect.err"); then
-            current=$(printf '%s' "$image" | jq -r '[.. | objects | .config.Labels["org.opencontainers.image.revision"]? // empty] | first // empty')
-          elif ! grep -q 'not found' "$RUNNER_TEMP/inspect.err"; then
-            cat "$RUNNER_TEMP/inspect.err" >&2
-            echo "::error::cannot read the commit $IMAGE:main holds"
-            exit 1
-          fi
-          # A labelled commit that no longer exists (404) is nothing to
-          # protect either; any other API error fails.
-          if [ -n "$current" ] && [ "$current" != "$GITHUB_SHA" ]; then
-            if status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$current...$GITHUB_SHA" --jq .status 2> "$RUNNER_TEMP/compare.err"); then
-              if [ "$status" != "ahead" ]; then
-                echo "::notice::main is at $current, which this commit is not ahead of ($status); leaving it there"
-                exit 0
-              fi
-            elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/compare.err"; then
-              cat "$RUNNER_TEMP/compare.err" >&2
-              exit 1
+          cd "$RUNNER_TEMP"
+          attempt() {
+            local n
+            for n in 1 2 3; do
+              "$@" && return 0
+              [ "$n" -lt 3 ] && sleep $((n * 10))
+            done
+            return 1
+          }
+          read_tag() {
+            if docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Image}}' > tag.json 2> tag.err; then
+              current=$(jq -r '[.. | objects | .config.Labels?["org.opencontainers.image.revision"]? // empty][0] // empty' tag.json)
+            elif grep -qF "$IMAGE:main: not found" tag.err; then
+              current=
+            else
+              cat tag.err >&2
+              return 1
             fi
+          }
+          compare() {
+            if gh api "repos/$GITHUB_REPOSITORY/compare/$current...$GITHUB_SHA" --jq .status > compare.out 2> compare.err; then
+              status=$(cat compare.out)
+            elif grep -q 'HTTP 404' compare.err; then
+              status=gone
+            else
+              cat compare.err >&2
+              return 1
+            fi
+          }
+          attempt read_tag || { echo "::error::cannot read $IMAGE:main"; exit 1; }
+          if [ -n "$current" ] && [ "$current" != "$GITHUB_SHA" ]; then
+            attempt compare || { echo "::error::cannot compare $current with $GITHUB_SHA"; exit 1; }
+            case "$status" in
+              ahead) ;;
+              gone|diverged) echo "::notice::main holds $current, which history no longer leads to ($status); retagging" ;;
+              *)
+                echo "::notice::main holds $current, which this commit does not descend from ($status); leaving it"
+                exit 0
+                ;;
+            esac
           fi
           docker buildx imagetools create -t "$IMAGE:main" "$IMAGE:$GITHUB_SHA"
 
