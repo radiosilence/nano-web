@@ -23,6 +23,15 @@ impl MimeConfig {
 }
 
 pub fn get_mime_config<P: AsRef<Path>>(path: P) -> MimeConfig {
+    let path = path.as_ref();
+    // Apple fetches the app-site association file by this exact name, with no
+    // extension to guess from, and expects JSON.
+    if path
+        .file_name()
+        .is_some_and(|n| n == "apple-app-site-association")
+    {
+        return MimeConfig::new("application/json".to_string());
+    }
     let mime = MimeGuess::from_path(path)
         .first()
         .map_or_else(|| DEFAULT_MIME.to_string(), |m| m.to_string());
@@ -82,5 +91,17 @@ pub fn get_cache_control(mime_type: &str) -> &'static str {
         "public, max-age=900" // 15 minutes
     } else {
         "public, max-age=3600" // 1 hour
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apple_app_site_association_is_json() {
+        let c = get_mime_config("public/.well-known/apple-app-site-association");
+        assert_eq!(c.mime_type, "application/json");
+        assert!(c.is_compressible);
     }
 }

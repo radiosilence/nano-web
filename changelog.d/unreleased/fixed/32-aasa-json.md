@@ -1,0 +1,1 @@
+- **`apple-app-site-association` is served as `application/json`.** The file has no extension, so it went out as `application/octet-stream`, and Apple expects JSON when it fetches the file for universal links.
