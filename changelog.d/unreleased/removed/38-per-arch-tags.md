@@ -1,0 +1,1 @@
+- **Per-architecture image tags** (`main-amd64`, `main-arm64`, `<version>-amd64`, `<version>-arm64`). The image is now built for both architectures at once, so every tag, `latest` and `<version>` included, is a multi-arch manifest; pull it without a suffix.

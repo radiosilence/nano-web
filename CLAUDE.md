@@ -14,7 +14,7 @@ Static file server that loads a directory into memory at startup and serves each
 
 ## Releasing
 
-`just release patch|minor|major` (or an exact `X.Y.Z`), or the Release workflow, branches from main, bumps `Cargo.toml` and `Cargo.lock`, turns the unreleased fragments into the version and opens the release PR. Merging it is the release: CI publishes the crate and the versioned image tags, then creates the GitHub release with the binaries and the changelog section as notes. A push releases only when it changes the version; `gh workflow run ci-cd.yml` on main retries a release that failed part way.
+`just release patch|minor|major` (or an exact `X.Y.Z`), or the Release workflow, branches from main, bumps `Cargo.toml` and `Cargo.lock`, turns the unreleased fragments into the version and opens the release PR. Merging it is the release: CI tags the image with the version, publishes the crate, then creates the GitHub release with the binaries and the changelog section as notes. A push releases only when it changes the version and that version has no GitHub release yet; `gh workflow run ci-cd.yml` on main retries a release that failed part way, and the scheduled run does the same for any version left unreleased.
 
 ## Check
 
@@ -22,3 +22,19 @@ Static file server that loads a directory into memory at startup and serves each
 just check   # fmt --check, clippy -D warnings, tests
 just fmt
 ```
+
+## CI/CD
+
+`.github/workflows/ci-cd.yml` is one run in two halves. CI ends in `Checks`, the only status the ruleset requires; CD runs on main after it and ships what CI built rather than building again.
+
+The `changes` job reads the diff (a pull request's against its base, a push's against the last main commit whose run passed) and sets one output per domain. Every other CI job runs only when its domain is set, so a skipped job is expected and passes `Checks`; a failed or cancelled one fails it. A manual or scheduled run sets every domain, and so does a release pull request.
+
+| Domain    | Paths                                                                     | Jobs                    |
+| --------- | ------------------------------------------------------------------------- | ----------------------- |
+| `rust`    | `src/`, `tests/`, `benches/`, `build.rs`, `Cargo.*`, `.cargo/`, toolchain | `Check`                 |
+| `docker`  | `Dockerfile`; on main, also any `rust` change                             | musl builds, image      |
+| `apple`   | manifests, lockfile, `.cargo/`, toolchain, code near an Apple cfg; on main, any `rust` change | `Apple`  |
+| `windows` | the same, with code near a `unix`/`windows` cfg                           | Windows build           |
+
+`.github/` counts for every domain and Markdown for none; `Changelog` runs on every change. `changes` also decides, once, whether the run releases (`release`) and at which `version`; every release job reads that answer, and the glibc and signed macOS builds run only then. Paths are allowlists, so a new top-level directory of code reaches no job until it is added. To add a domain: add its output and its paths in `changes`, gate its jobs on it with a job-level `if:`, and add the jobs to `Checks`' `needs`.
+
