@@ -574,13 +574,27 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          current=$(docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Image}}' 2>/dev/null \
-            | jq -r '[.. | objects | .config.Labels["org.opencontainers.image.revision"]? // empty] | first // empty' || true)
+          # Only a missing tag or label means there is nothing to protect; any
+          # other registry error fails rather than risk moving `main` back.
+          current=
+          if image=$(docker buildx imagetools inspect "$IMAGE:main" --format '{{json .Image}}' 2> "$RUNNER_TEMP/inspect.err"); then
+            current=$(printf '%s' "$image" | jq -r '[.. | objects | .config.Labels["org.opencontainers.image.revision"]? // empty] | first // empty')
+          elif ! grep -q 'not found' "$RUNNER_TEMP/inspect.err"; then
+            cat "$RUNNER_TEMP/inspect.err" >&2
+            echo "::error::cannot read the commit $IMAGE:main holds"
+            exit 1
+          fi
+          # A labelled commit that no longer exists (404) is nothing to
+          # protect either; any other API error fails.
           if [ -n "$current" ] && [ "$current" != "$GITHUB_SHA" ]; then
-            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$current...$GITHUB_SHA" --jq .status)
-            if [ "$status" != "ahead" ]; then
-              echo "::notice::main is at $current, which this commit is not ahead of ($status); leaving it there"
-              exit 0
+            if status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$current...$GITHUB_SHA" --jq .status 2> "$RUNNER_TEMP/compare.err"); then
+              if [ "$status" != "ahead" ]; then
+                echo "::notice::main is at $current, which this commit is not ahead of ($status); leaving it there"
+                exit 0
+              fi
+            elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/compare.err"; then
+              cat "$RUNNER_TEMP/compare.err" >&2
+              exit 1
             fi
           fi
           docker buildx imagetools create -t "$IMAGE:main" "$IMAGE:$GITHUB_SHA"
