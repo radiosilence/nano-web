@@ -1,0 +1,1 @@
+- **Claude reviews pull requests and answers `@claude`.** Every non-draft, non-release pull request from this repository gets a review, and the owner and collaborators can mention `@claude` in issues and pull requests. Both need the Claude GitHub App installed and `CLAUDE_CODE_OAUTH_TOKEN` set.
