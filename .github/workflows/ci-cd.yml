@@ -641,7 +641,7 @@ jobs:
     needs: [changes, checks, container, image-build, release-build, windows, macos-release]
     # Every need having run, not merely not failed: a skipped job is not a
     # failure, and a release without one of its parts is not a release.
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.checks.result == 'success' && needs.container.result == 'success' && needs.image-build.result == 'success' && needs.release-build.result == 'success' && needs.windows.result == 'success' && needs.macos-release.result == 'success' && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     env:
       VERSION: ${{ needs.changes.outputs.version }}
     steps:
@@ -735,7 +735,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [changes, checks, image-build, release-build, windows, macos-release, publish-crate, container-release]
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.checks.result == 'success' && needs.image-build.result == 'success' && needs.release-build.result == 'success' && needs.windows.result == 'success' && needs.macos-release.result == 'success' && needs.publish-crate.result == 'success' && needs.container-release.result == 'success' && needs.changes.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     permissions:
       contents: write
     env:
