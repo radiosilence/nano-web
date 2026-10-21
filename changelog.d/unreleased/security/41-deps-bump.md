@@ -1,0 +1,1 @@
+- **Dependencies updated for RustSec advisories.** Fixes crossbeam-epoch (RUSTSEC-2026-0204), h2 (RUSTSEC-2026-0258), quinn-proto (RUSTSEC-2026-0185, 0338 to 0340), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0104/0382) and webpki-root-certs (RUSTSEC-2026-0383). Includes brotli 8 → 9, minijinja 2 → 3 and zstd 0.13 → 0.14.
