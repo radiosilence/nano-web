@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.4.10
+
+### Security
+
+- **Dependencies updated for RustSec advisories.** Fixes crossbeam-epoch (RUSTSEC-2026-0204), h2 (RUSTSEC-2026-0258), quinn-proto (RUSTSEC-2026-0185, 0338 to 0340), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0104/0382) and webpki-root-certs (RUSTSEC-2026-0383). Includes brotli 8 → 9, minijinja 2 → 3 and zstd 0.13 → 0.14.
+
+### Removed
+
+- **Intel macOS binary** (`nano-web-macos-amd64`). Releases ship the arm64 macOS binary only; on an Intel Mac, install with `cargo install nano-web` or run the Docker image.
+- **Per-architecture image tags** (`main-amd64`, `main-arm64`, `<version>-amd64`, `<version>-arm64`). The image is now built for both architectures at once, so every tag, `latest` and `<version>` included, is a multi-arch manifest; pull it without a suffix.
+
+### Fixed
+
+- **`apple-app-site-association` is served as `application/json`.** The file has no extension, so it went out as `application/octet-stream`, and Apple expects JSON when it fetches the file for universal links.
+
+### Internal
+
+- **Release script recuts a stale branch.** `scripts/release.sh` deletes a release branch whose PR was closed or merged, locally and on origin, and cuts it again from origin/main; a branch with an open PR still stops it.
+- **macOS CI runs as one job, and only when needed.** The account's macOS runners are few and shared by every repository, so a single `Apple` job runs clippy, the tests and the release build on one runner. Pull requests take it only when they change dependencies, toolchain, build configuration, workflows or Apple-gated code.
+- **One CI/CD pipeline gated by `Checks`, with jobs chosen by the domains a change touches.** A `changes` job reads the diff and decides, once, whether the run releases; each CI job runs only for its domain, and `Checks` is the single required status. CD runs after `Checks` and ships what CI built: the image is the musl binaries CI built, pushed under the commit and retagged `main` or with the release's version, and the release attaches those same binaries. The glibc and signed macOS builds start alongside the checks on a release only, and crates.io is published once every build has passed, before the image's version tags and the GitHub release that marks the version out.
+- **Claude reviews pull requests and answers `@claude`.** Every non-draft, non-release pull request from this repository gets a review, and the owner and collaborators can mention `@claude` in issues and pull requests. Both need the Claude GitHub App installed and `CLAUDE_CODE_OAUTH_TOKEN` set.
+- **Releases publish again when an earlier job was skipped on purpose.** The GitHub release and the image version tags now wait for each of their own needs to succeed, rather than for nothing anywhere upstream to have been skipped, which left a release built but unpublished.
+- **A release run is no longer cancelled while it waits to move the image tag.** A concurrency group holds one pending job and cancels it when another queues, so release runs now wait in a group of their own.
+
 ## 1.4.9
 
 ### Internal
