@@ -566,12 +566,14 @@ jobs:
     name: Container image (main)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [checks, container]
+    needs: [changes, checks, container]
     if: ${{ !cancelled() && needs.checks.result == 'success' && needs.container.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     # One at a time across runs: two that read the tag together could both
-    # see their commit ahead, and the one finishing last would win.
+    # see their commit ahead, and the one finishing last would win. A group
+    # keeps one pending job and cancels it when another queues, so release
+    # runs, which must not be cancelled, wait in a group of their own.
     concurrency:
-      group: container-main
+      group: container-main${{ needs.changes.outputs.release == 'true' && '-release' || '' }}
       cancel-in-progress: false
     permissions:
       contents: read
