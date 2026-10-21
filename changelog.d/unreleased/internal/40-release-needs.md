@@ -1,0 +1,1 @@
+- **Releases publish again when an earlier job was skipped on purpose.** The GitHub release and the image version tags now wait for each of their own needs to succeed, rather than for nothing anywhere upstream to have been skipped, which left a release built but unpublished.
