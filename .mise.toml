@@ -2,3 +2,5 @@
 rust = "latest"
 just = "latest"
 lefthook = "latest"
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
