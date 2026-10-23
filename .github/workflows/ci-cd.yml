@@ -653,8 +653,8 @@ jobs:
           CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          awk -v h="## $VERSION" '$0==h{f=1;next} f&&/^## /{exit} f' CHANGELOG.md > notes.md
-          if ! grep -q . notes.md; then
+          # Read without writing a file: `cargo publish` refuses a dirty checkout.
+          if [ -z "$(awk -v h="## $VERSION" '$0==h{f=1;next} f&&/^## /{exit} f' CHANGELOG.md)" ]; then
             echo "::error::CHANGELOG.md has no section for $VERSION"
             exit 1
           fi
