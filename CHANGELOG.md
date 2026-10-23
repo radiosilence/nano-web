@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.11
+
+### Security
+
+- Update tokio and other packages for security
+
 ## 1.4.10
 
 ### Security
