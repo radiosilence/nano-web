@@ -1,0 +1,1 @@
+- **Workflows are linted.** Pull requests that touch `.github/workflows` or `.github/actions` run actionlint, with shellcheck on the `run:` scripts.
