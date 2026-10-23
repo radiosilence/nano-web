@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.12
+
+### Fixed
+
+- **Releases reach crates.io again.** The release pre-flight no longer writes a file into the checkout, which made `cargo publish` refuse to run; 1.4.10 and 1.4.11 were never published because of it.
+
+### Internal
+
+- **Workflows are linted.** Pull requests that touch `.github/workflows` or `.github/actions` run actionlint, with shellcheck on the `run:` scripts.
+
 ## 1.4.11
 
 ### Security
