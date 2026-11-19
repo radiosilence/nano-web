@@ -24,10 +24,9 @@ ENV LOG_FORMAT=json
 
 # nobody. nano-web reads its bundle and, by default, binds :3000, so nothing
 # here needs root, and a public server should not hand it to whoever compromises
-# it. Images built from this one inherit the user, which has two consequences:
-# every file in the bundle must be world-readable (COPY keeps the source's
-# modes, and an unreadable file is skipped at load and then 404s), and a
-# `--port` below 1024 needs the runtime to allow unprivileged binds there.
+# it. Images built from this one inherit the user, so the bundle must be
+# world-readable and a `--port` below 1024 needs the runtime's leave; the
+# README's Docker section has the detail.
 USER 65534:65534
 
 ENTRYPOINT ["/nano-web"]

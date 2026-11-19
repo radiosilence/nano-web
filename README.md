@@ -39,17 +39,26 @@ Pre-built binaries on [GitHub Releases](https://github.com/radiosilence/nano-web
 ## Docker
 
 ```dockerfile
+# syntax=docker/dockerfile:1
 FROM ghcr.io/radiosilence/nano-web:latest
 COPY --chmod=a+rX ./dist /public/
 ```
 
-The image runs as `nobody` (65534), so the bundle has to be world-readable.
-`COPY` keeps the source's modes, and a file nobody can read is skipped when the
-bundle loads and then answers 404 rather than failing the start, so `--chmod`
-guards against a build context or builder stage with restrictive modes. A
-`--port` below 1024 needs a runtime that allows unprivileged binds there
-(Kubernetes: the `net.ipv4.ip_unprivileged_port_start` pod sysctl). `USER 0` in
-a derived image restores the old behaviour.
+The image runs as `nobody` (65534), so the bundle has to be world-readable:
+every file readable, and every directory readable and searchable. Nothing fails
+loudly otherwise. A file nobody can read is skipped when the bundle loads and
+answers 404, and a directory nobody can read takes its whole subtree with it,
+without a log line. `COPY` keeps the source's modes, so `--chmod` guards against
+a build context or builder stage with restrictive ones; the `syntax` line gives
+older builders a frontend that accepts a symbolic mode. A bundle bind-mounted
+at `/public` instead needs the same modes on the host, or `--user` set to a uid
+that can read it.
+
+The default port, 3000, needs no privilege. A `--port` below 1024 works where
+the runtime allows unprivileged binds, as Docker and containerd 2 do by
+default. Host networking and some older Kubernetes runtimes do not; there, set
+the `net.ipv4.ip_unprivileged_port_start` pod sysctl. `USER 0` in a derived
+image restores the old behaviour.
 
 ## Usage
 
