@@ -1,0 +1,1 @@
+- **The image runs as nobody.** It sets `USER 65534:65534`, so images built from it no longer run as root by default.
