@@ -1,1 +1,1 @@
-- **The image runs as nobody.** It sets `USER 65534:65534`, so images built from it no longer run as root by default.
+- **The image runs as nobody.** nano-web serves the public internet and needs no privilege, so the image sets `USER 65534:65534` and images built from it inherit that. Two things can break on rebuild: a bundle file nobody can read is skipped and answers 404 (copy with `--chmod=a+rX`), and a `--port` below 1024 needs the runtime to allow unprivileged binds. `USER 0` restores the old behaviour.

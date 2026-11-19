@@ -40,8 +40,16 @@ Pre-built binaries on [GitHub Releases](https://github.com/radiosilence/nano-web
 
 ```dockerfile
 FROM ghcr.io/radiosilence/nano-web:latest
-COPY ./dist /public/
+COPY --chmod=a+rX ./dist /public/
 ```
+
+The image runs as `nobody` (65534), so the bundle has to be world-readable.
+`COPY` keeps the source's modes, and a file nobody can read is skipped when the
+bundle loads and then answers 404 rather than failing the start, so `--chmod`
+guards against a build context or builder stage with restrictive modes. A
+`--port` below 1024 needs a runtime that allows unprivileged binds there
+(Kubernetes: the `net.ipv4.ip_unprivileged_port_start` pod sysctl). `USER 0` in
+a derived image restores the old behaviour.
 
 ## Usage
 
