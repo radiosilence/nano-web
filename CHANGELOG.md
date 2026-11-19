@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.13
+
+### Security
+
+- **The image runs as nobody.** nano-web serves the public internet and needs no privilege, so the image sets `USER 65534:65534` and images built from it inherit that. Two things can break on rebuild: a bundle file or directory nobody can read is skipped silently and answers 404 (copy with `--chmod=a+rX`), and a `--port` below 1024 fails where the runtime does not allow unprivileged binds, such as host networking. `USER 0` restores the old behaviour; the README's Docker section has the detail.
+
+### Internal
+
+- **Builds use the latest stable Rust.** `rust-version` is removed from the manifests, so dependency resolution targets the toolchain in use instead of holding crates back for an old compiler.
+
 ## 1.4.12
 
 ### Fixed
