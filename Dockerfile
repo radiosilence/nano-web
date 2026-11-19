@@ -22,10 +22,11 @@ LABEL org.opencontainers.image.source="https://github.com/radiosilence/nano-web"
 
 ENV LOG_FORMAT=json
 
-# nobody. nano-web reads its bundle and binds an unprivileged port, so nothing
+# nobody. nano-web reads its bundle and, by default, binds :3000, so nothing
 # here needs root, and a public server should not hand it to whoever compromises
-# it. Images built from this one inherit the user; a bundle they copy in stays
-# readable because COPY keeps the build context's world-readable modes.
+# it. Images built from this one inherit the user, so the bundle must be
+# world-readable and a `--port` below 1024 needs the runtime's leave; the
+# README's Docker section has the detail.
 USER 65534:65534
 
 ENTRYPOINT ["/nano-web"]
