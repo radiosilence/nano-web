@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.13
+
+### Security
+
+- **The image runs as nobody.** It sets `USER 65534:65534`, so images built from it no longer run as root by default.
+
+### Internal
+
+- **Builds use the latest stable Rust.** `rust-version` is removed from the manifests, so dependency resolution targets the toolchain in use instead of holding crates back for an old compiler.
+
 ## 1.4.12
 
 ### Fixed
